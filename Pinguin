@@ -1,0 +1,167 @@
+type
+  TTask = class(TThread)
+  public
+    sendCritSection: TRTLCriticalSection;
+    switch_list: TLIST; // Список обьектов TSwitch
+    tclient_list: TLIST; // Список клиентов сервера пингвина
+    lst_start: Integer; // Откуда начать обработку из списка
+    lst_end: Integer;
+    task_pos: Integer; // Позиция в гриде
+    CUR_POS: Integer; // Текущая выполненная позиция
+    status_task: String;
+    LogStr: String;
+    send_json: String;
+    request_timeout: Integer;
+    restart_task: Boolean;
+
+    // Обновление статуса проверки аипи адресов
+    constructor Create(Asyspended: Boolean);
+    destructor Destroy;
+    
+    type
+  TConditions = class(TCollectionItem)
+  public
+  var
+    CONDITION_TEXT: String;
+    MESS: String;
+    send_telegram: Boolean;
+    send_email: Boolean;
+    send_sms: Boolean;
+
+    constructor Create(zcond_text: String; zmess: String;
+      ztelegram, zemail, zsms: Boolean);
+  end;
+
+type
+  TEvents = class(TCollectionItem)
+  public
+  var
+    Event: String;
+    login: String;
+    password : String;
+    port: String;
+    ip : String;
+    event_type : Integer;
+    mess : String;
+    send_sms,
+    send_telegram,
+    send_email : Boolean;
+
+    constructor Create(zevent: String; zlogin: String;
+      zpass:String;zport:String;zip:String;zevent_type:integer;zmess:String;zsend_sms,zsend_telegram,zsend_email:Boolean);
+  end;
+
+
+procedure StartProgram();
+    procedure SConnect(Sender: TObject; Socket: TCustomWinSocket);
+    { Public declarations }
+    // Загрузка Конфигурации из ини фаила
+    Procedure getConfigurable();
+    // Загрузка списка оборудования из базы данных
+    Function getIPList(): TLIST;
+    // загрузка списка клиентов из фаила тхт
+    Function getIPListFromFile(FilePath: String): TLIST;
+    // запуск основнои задачи формирующеи потоки
+    Procedure StartPing;
+    // заполнение грида по умолчанаю
+    procedure GridTaskInit();
+    // добавление информации о задачи в грид
+    function addTaskGrid(task_name: String; result_task: String;
+      status_task: String): Integer;
+    // вывод системных сообщении в лог
+    procedure Log(Log: String; clear: Boolean);
+    procedure DeleteARow(Grid: TStringGrid; ARow: Integer);
+    procedure SQLiteInit();
+    procedure FireBirdInit();
+    // Добавить КЛИЕНТА во внутреннюю базу
+    function SetAddClient(client_ip: String; client_name: String;
+      client_port: Integer): Integer;
+    // Добавить Пользователя в локальную базу Телеграм
+    function SetAddTelegramUser(user_name, user_id: String): Integer;
+    // Удалить пользователя телеграм из списка рассылки
+    function DeleteTelegramUser(user_id: String): Boolean;
+    Procedure OnMinimizeProc(Sender: TObject);
+    // Обновить список аипи либо через фаил либо через базу
+    Procedure UpdateListFromTime(time_update: Byte);
+    // Получить список клиентов из базы для отключения портов или включения
+    Function GetCustomerIP(get_id: Byte; param1: String): TLIST;
+    // Получить Список Выполненных
+    Function GetSuccessON_OFF(ON_OFF:BOOLEAN): TStringList;
+    // Изменить статус в базе при выполнении или невыполнеии операции
+    Procedure SetStatusONOFF(CUSTOMER_ID: Integer; IP, FIO, adress: String;
+      port: Integer; status: Integer; ON_OFF: Boolean);
+    // Сохранить в базу весь список выполненных аипи адресов
+    Procedure SaveBaseSUCCESS_IP();
+    // получить список клиентов из внутреенеи базы
+    Function GetClient(): TLIST;
+    Function GetTelegramUser(): TLIST;
+    // Получить условия реагирования на события
+    Function GetCondition(): TLIST;
+    // Получить условия событии для деиствии
+    Function GetEvents(): TLIST;
+    Procedure SetNewCondition(Cond: String; MESS: String;
+      sms, email, telegram: Boolean);
+    Procedure SetNewCustomerONOFF(CustIP:TcustomerIP);
+    Procedure SetNewEvents(event:String;ip:String;password:String;login:String;port:String;event_id:Integer;mess:String;send_sms,send_telegram,send_email:Boolean);
+    Procedure DeleteEvents(Event: String);
+    Procedure DeleteCondition(Cond: String);
+    // запись в лог фаил 1-суслог 2-системный лог
+    Procedure LogFile(txt: String; f_id: Byte);
+    // получить адрес реальный из афона
+    Function GetAdressFromDB(IP: String): String;
+    function Explode(S: String; Delimiter: Char): Strings; overload;
+    function Explode2(const delim, str: string): TStringList;
+    function SplitList(lst: TStrings; delim: Char): String;
+    // обработка команда получннхы от железяк
+    Procedure ProcessCommand(MESS: String; IP: String; Abind: TIdSocketHandle);
+    // Функция выбора реагирования на входящее событие
+    Procedure StartEvents(Event:TEvents;Mess:String;IP:String;Port:Word);
+    // Получить адрес аипи и порт из строки syslog
+    Function ParseIPFromSyslogString(MESS:String;ip,port:String):Boolean;
+    // Отправить всем пользователяи из Телеграма которые подписаны
+    Procedure SendAllTelegram(bot: TTelegramObject; MESS: String;
+      adress: String; IP: String);
+    Procedure SendMail(body: TStringList);
+    // запуск потоков для вкл отключениях портов у клиентов
+    Procedure StartONOFF(ON_OFF: Boolean; List_IP: TLIST);
+    // сигнал о завершении работы потоков вкл/откл портов
+    Procedure EndedOnOffTask(ON_OFF: Boolean; IP_LIST: TLIST);
+    Function WaitFor(response: String): Boolean;
+    // Отключать порт на оборудовании huawei
+    procedure SetHuawei_ON_OFF(ip:String;port:String;password:String;on_off:Boolean);
+    // Отключать порт на оборудование на dlink
+    procedure SetDLink_ON_OFF(ip:String;port:String;login,password:String;on_off:Boolean);
+    // получить наименование события
+    function GetEventType(event_type:Integer):String;
+  end;
+  
+  Procedure TPinguinServerForm.SendAllTelegram(bot: TTelegramObject; MESS: String;
+  adress: String; IP: String);
+var
+  i: Integer;
+  Client: TTelegramUser;
+  user_id, user_name, send_mess: String;
+begin
+  try
+    for i := 0 to TelegramUsers.Count - 1 do
+    begin
+      Client := TTelegramUser(TelegramUsers[i]);
+      user_id := Client.user_id;
+      user_name := Client.user_name;
+      send_mess := ('ALARM IN SYSLOG SERVER' + ' Adres :' +
+        TranslitRus2Lat(adress) + ' IP :' + IP + ' Message : ' + MESS);
+
+      bot.SendMessageTelegram(user_id, send_mess);
+      LogFile('Пользователю ' + user_name + ' Отправленно Сообщение ' +
+        MESS, 2);
+    end;
+  EXCEPT
+    on E: EXCEPTION do
+    begin
+      LogFile('При отправке Сообщ в Телеграм Ошибка ' + E.Message, 2)
+    end;
+
+  end;
+end;
+
+
