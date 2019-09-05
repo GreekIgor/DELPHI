@@ -1,0 +1,164 @@
+
+type
+TMoneyOperation = class(TObject)
+  OfflineMode : Boolean;
+  CashBoxOfflineMode : Boolean;
+  DateTime : String;
+  Sum : Double;
+  CashBox : Tcashbox;
+end;
+
+type
+  TAnswerCheck = class(Tobject)
+  public
+  var
+    check_number: String;
+    date_time: String;
+    offline_mode: Boolean;
+    cashbox: Tcashbox;
+    CheckOrderNumber: Integer;
+    ShiftNumber: Integer;
+    EmployeeName: String;
+    TicketUrl: String;
+  end;
+
+
+type
+  TOOFD = class(Tobject)
+
+  private const
+    API_URL = 'https://devkkm.webkassa.kz/api/';
+
+  var
+    HTTP: TIdHTTP;
+    SSLIO: TIdSSLIOHandlerSocketOpenSSL;
+
+  public
+    constructor Create();
+    destructor Destroy();
+
+    function Autorize(login: String; passwd: String): String;
+    // Отправить чек
+    function Check(SendCheck: TSendCheck): TAnswerCheck;
+    // Операции внесения и снятия
+    function MoneyOperation(Token: String; CassaNumber: String;
+      Operation_type: Integer; Sum: double; ExtNumb: String): TMoneyOperation;
+    function ZReport(Token: String; CassaNumber: String): TZXReport;
+    function XReport(Token: String; CassaNumber: String): TZXReport;
+    
+    
+    
+    ......................
+    
+    
+constructor TOOFD.Create();
+begin
+  HTTP := TIdHTTP.Create(nil);
+  SSLIO := TIdSSLIOHandlerSocketOpenSSL.Create(nil);
+  HTTP.IOHandler := SSLIO;
+  HTTP.Request.ContentType := 'application/json';
+  HTTP.Request.ContentEncoding := 'utf8';
+
+end;
+
+
+function TOOFD.Autorize(login: String; passwd: String): String;
+var
+  json_stream: TStringStream;
+  json_obj: TJSONObject;
+  json_pair: TJSONPair;
+  response: String;
+  Token: String;
+  json_response: TJSONObject;
+begin
+  try
+    begin
+
+
+      Token := '';
+      json_obj := TJSONObject.Create;
+      json_pair := TJSONPair.Create('Login', login);
+      json_obj.AddPair(json_pair);
+      json_pair := TJSONPair.Create('Password', passwd);
+      json_obj.AddPair(json_pair);
+
+      json_stream := TStringStream.Create(json_obj.ToJSON);
+
+      response := HTTP.Post(API_URL + 'Authorize', json_stream);
+      json_response := TJSONObject.ParseJSONValue(response) as TJSONObject;
+      if (json_response.GetValue('Data') <> nil) then
+      begin
+        Token := (json_response.GetValue('Data') as TJSONObject)
+          .GetValue('Token').Value;
+
+      end
+      else
+      begin
+        // error code
+       ShowMessage(response);
+       Log(response);
+      end;
+
+    end;
+  finally
+    Result := Token;
+    json_obj.Free;
+    json_stream.Free;
+
+  end;
+
+end;
+
+
+function TOOFD.MoneyOperation(Token: String; CassaNumber: String;
+  Operation_type: Integer; Sum: double; ExtNumb: String): TMoneyOperation;
+var
+  json_obj,
+  json_response,
+  json_data : TJSONObject;
+  json_stream: TStringStream;
+  response: String;
+  moneyOperation : TMoneyOperation;
+begin
+try
+  json_obj := TJSONObject.Create;
+
+  json_obj.AddPair('Token', Token);
+  json_obj.AddPair('CashBoxUniqueNumber', CassaNumber);
+  json_obj.AddPair('OperationType', TJSONNumber.Create(Operation_type));
+  json_obj.AddPair('Sum', TJSONNumber.Create(Sum));
+  json_obj.AddPair('ExternalCheckNumber', ExtNumb);
+
+  json_stream := TStringStream.Create(json_obj.ToJSON);
+   response := HTTP.Post(API_URL + 'MoneyOperation', json_stream);
+       Log(response);
+  json_response := (TJSONObject.ParseJSONValue(response) as TJSONObject);
+  if (json_response.GetValue('Data') <> nil) then
+    begin
+      json_data := (json_response.GetValue('Data') as TJSONObject);
+
+  moneyOperation := TMoneyOperation.Create;
+  moneyOperation.OfflineMode := StrToBool(json_data.GetValue('OfflineMode').Value);
+  moneyOperation.CashBoxOfflineMode := StrToBool(json_data.GetValue('CashboxOfflineMode').Value);
+  moneyOperation.DateTime := json_data.GetValue('DateTime').Value;
+  moneyOperation.Sum := StrToFloat(json_data.GetValue('Sum').Value);
+  moneyOperation.CashBox := Tcashbox.Create;
+
+
+
+  moneyOperation.CashBox.Unique_Number := TJSONObject(json_data.GetValue('Cashbox')).GetValue('UniqueNumber').Value;
+  moneyOperation.CashBox.Registration_Number := TJSONObject(json_data.GetValue('Cashbox')).GetValue('RegistrationNumber').Value;
+  moneyOperation.CashBox.Identity_Number := TJSONObject(json_data.GetValue('Cashbox')).GetValue('IdentityNumber').Value;
+   end
+   else
+   begin
+     ShowMessage(response); Log('in- '+json_obj.ToJSON); Log('out - '+response);
+   end;
+
+
+
+  Result := moneyOperation;
+ except on e:EXCEPTION do begin  Log('in- '+json_obj.ToJSON); Log('out - '+response);  end;
+end;
+
+end;
