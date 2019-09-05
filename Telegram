@@ -1,0 +1,101 @@
+ type
+ TTelegramBot = class(TThread)
+   public
+    task_pos: Integer; // Позиция в гриде
+    cur_status : String; // Текущии Статус
+
+    constructor Create(Asyspended: Boolean);
+    destructor Destroy;
+   private
+   CallProcedure : TCallbackProc;
+   response : String; // Ответ Который вернул бот без распарсивания
+   user_id : String; // useid пользователя написавшего
+   user_name : String; // имя пользователя который написал нам
+   user_message : String; // сообщение которое написал пользователь
+   Procedure Status(); // Процедура обработки статусов от бота
+     protected
+    procedure Execute; override;
+ end;
+ 
+ type
+ TTelegramObject = class(TObject)
+   public
+    Connected : Boolean;
+   function StartListen(CallProc:TCallbackProc):TTelegramBot;
+   Function SendMessageTelegram(IDUser,Text: String):String;
+   Function ConnectTelegramBot():Boolean;
+
+ end;
+ 
+ // запуск Потоков для пинга аипи адресов
+Function TTelegramObject.StartListen(CallProc:TCallbackProc):TTelegramBot;
+var
+  TBot:  TTelegramBot;
+begin
+
+    TBot:= TTelegramBot.Create(false);
+    TBot.Priority := tpLowest;
+    TBot.FreeOnTerminate := True;
+    TBot.CallProcedure :=  CallProc;
+    TBot.task_pos:=1;
+    TBot.Resume;
+
+    Result := TBot;
+end;
+.........................
+
+
+
+// Отправим Сообщение Пользователю зная его ID
+ Function TTelegramObject.SendMessageTelegram(IDUser,Text: String):String;
+var
+  JsObject: ISuperObject;
+  zapros:String;
+  conf : Tconf;
+begin
+   zapros:='/sendmessage?'+'chat_id='+IDUser+'&'+'text='+Text;
+   try
+
+     THttp:=TIdHTTP.Create;
+
+     conf := PinguinServerForm.Conf;
+
+    if(conf.proxy_enable)then
+    begin
+     THttp.ProxyParams.ProxyServer := conf.proxy_server;
+     THttp.ProxyParams.ProxyPort := conf.proxy_port;
+     THttp.ProxyParams.ProxyUsername := conf.proxy_username;
+     THttp.ProxyParams.ProxyPassword := conf.proxy_password;
+    end;
+
+
+     SSL:=TIdSSLIOHandlerSocketOpenSSL.Create;
+     THttp.IOHandler:=SSL;
+
+     JsObject:=SO(THTTP.Get(BaseUrl+API+Zapros));
+     if JsObject.B['ok']=True then
+     begin
+     Result := ' Бот написал '+JsObject.s['result.chat.username']+' : '+JsObject.s['result.text'];
+     end;
+   except on E:EXCEPTION do begin
+       Result := e.Message+' Ошибка отправки сообщения!';
+                            end;
+   end;
+
+    THttp.Free;
+     SSL.Free;
+
+end;
+
+constructor TTelegramBot.Create(Asyspended: Boolean);
+begin
+  FreeOnTerminate := True;
+  inherited Create(Asyspended);
+end;
+
+destructor TTelegramBot.Destroy;
+begin
+PinguinServerForm.Log('destroy thread telegram',false);
+ // PinguinServerForm.DeleteARow(PinguinServerForm.GridTaskList, (task_pos - 1));
+  inherited;
+end;
