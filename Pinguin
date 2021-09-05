@@ -1,3 +1,245 @@
+unit pinguin_unit;
+
+interface
+
+uses
+  Winapi.Windows, Winapi.Messages, System.SysUtils, System.Variants,
+  System.Classes, Vcl.Graphics,
+  Vcl.Controls, Vcl.Forms, Vcl.Dialogs, Vcl.Menus, Vcl.ExtCtrls, Vcl.Grids,
+  Vcl.StdCtrls, IniFiles, FireDAC.Stan.Intf, FireDAC.Stan.Option,
+  FireDAC.Stan.Error, FireDAC.UI.Intf, FireDAC.Phys.Intf, FireDAC.Stan.Def,
+  FireDAC.Stan.Pool, FireDAC.Stan.Async, FireDAC.Phys, FireDAC.Phys.FB,
+  FireDAC.Phys.FBDef, FireDAC.VCLUI.Wait, FireDAC.Stan.Param, FireDAC.DatS,
+  FireDAC.DApt.Intf, FireDAC.DApt, Data.DB, FireDAC.Comp.DataSet,
+  FireDAC.Comp.Client, IdBaseComponent, IdComponent, IdRawBase, IdRawClient,
+  IdIcmpClient, Vcl.ComCtrls, FireDAC.Phys.SQLite, FireDAC.Phys.SQLiteDef,
+  FireDAC.Stan.ExprFuncs, System.Win.ScktComp, Json, IdUDPClient, smsc_api,
+  IdUDPBase, IdSocketHandle,
+  IdGlobal, StrUtils, SuperObject, IdTCPConnection, IdTCPClient, IdUDPServer,
+  telegrambot_unit,
+  IdMessage, IdIOHandler, IdIOHandlerSocket, IdIOHandlerStack, IdSSL,
+  IdSSLOpenSSL, IdExplicitTLSClientServerBase, IdMessageClient, IdSMTPBase,
+  IdSMTP, IdTelnet, IdContext, IdCustomTCPServer, IdTelnetServer, serial_unit,
+  registry,DateUtils, IdThreadComponent, IdCustomHTTPServer, IdHTTPServer ,math,
+  IdHTTP;
+
+type
+  Strings = Array of String;
+
+type
+  TMyGrid = class(TCustomGrid);
+
+type
+  TConf = record
+
+    proxy_enable : Boolean;
+    proxy_server : String;
+    proxy_port : Integer;
+    proxy_username : String;
+    proxy_password : String;
+
+    base_server: String;
+    base_port: Integer;
+    base_name: String;
+    base_user: String;
+    base_password: String;
+
+    server_port: Integer;
+    base_or_file: Boolean; // Запуск пинга из базы или фаила 1 и 0
+    count_task: Integer; // количество задач на поток
+    timeout: Integer; // время на ожидание  ответа пинга
+    restart_task: Boolean; // перезапуск задач
+    update_ip_list: Integer; // Обновлять список аипи каждые
+
+    syslog_port: Integer;
+    syslog_server: String[250];
+
+    smsc_login: String;
+    smsc_pass: String;
+    smsc_phone: String;
+
+    email_host: String;
+    email_port: Integer;
+    email_username: String;
+    email_password: String;
+    email_recipients: String;
+    filtertext: String;
+
+    send_sms, send_client, filtrated, write_base, write_log, send_telegram,
+      send_email, start_ping: Boolean;
+
+  end;
+
+ type
+  TGPON_CLIENT = class(TObject)
+
+  public
+  MAC : String;
+  CUSTOMER_ID : Integer;
+  ADRESS : String;
+  IP : String;
+  tv_inet_all : Byte;
+  ON_OFF : Byte;
+  end;
+
+
+  type
+  TEvents = class(TCollectionItem)
+  public
+  var
+    Event: String;
+    login: String;
+    password : String;
+    port: String;
+    ip : String;
+    event_type : Integer;
+    mess : String;
+    send_sms,
+    send_telegram,
+    send_email : Boolean;
+
+    constructor Create(zevent: String; zlogin: String;
+      zpass:String;zport:String;zip:String;zevent_type:integer;zmess:String;zsend_sms,zsend_telegram,zsend_email:Boolean);
+  end;
+
+type
+ TEventsONOFF = class(TThread)
+   public
+   Event : TEvents;
+   status_str : String;
+   constructor Create(Asyspended: Boolean);
+    destructor Destroy;
+   private
+    response_result: String;
+    Procedure SetStatus();
+    Function WaitFor(response: String): Boolean;
+    procedure TelnetDataAvalable(Sender: TIdTelnet; const Buffer: TIdBytes);
+  protected
+    procedure Execute; override;
+ end;
+
+type
+  TONOFF_GPON = class(TThread)
+  public
+    CUR_POS : Integer;
+    task_pos : Integer;
+    status_task : String;
+
+    LIST_CLIENT : TLIST; // TGPON_CLIENT
+
+    constructor Create(Asyspended: Boolean);
+    destructor Destroy;
+
+  private
+   var
+    ON_OFF: Boolean; // включать или отключать
+    status_str: String;
+    response_result: String;
+    Procedure SetStatus();
+    Procedure SetProgress();
+    Function WaitFor(response: String): Boolean;
+    procedure TelnetDataAvalable(Sender: TIdTelnet; const Buffer: TIdBytes);
+  protected
+    procedure Execute; override;
+
+
+  end;
+
+
+  // Обьект для хранения адреса свитча
+type
+  TSwitch = class(TCollectionItem)
+  public
+    IP: String[255];
+    port: Integer;
+    status: String;
+    ping: Integer;
+    enable: Boolean;
+    last_avb: String[255];
+    adress: String;
+    constructor Create(z_ip: String; z_port: Integer; z_status: String;
+      z_adress: String);
+  end;
+
+  // обьект описания клиента
+type
+  TCustomer = class(TCollectionItem)
+  public
+    customer_fio: String;
+    phone_number: String;
+    vip_status: Boolean;
+
+    constructor Create(z_fio: String; z_phone: String; z_vip_s: Boolean);
+  end;
+
+type
+  TTaskObject = class(TObject)
+  public
+  var
+    task_pos: Integer;
+    constructor Create(task_name: String; task_status: String; obj: TObject);
+    procedure TerminateTask();
+  private
+  end;
+
+type
+  TCustomerIP = class(TObject)
+  public
+  var
+    CUSTOMER_ID: Integer;
+
+  var
+    customer_fio: STRING;
+
+  var
+    adress: STRING;
+
+  var
+    IP: STRING;
+    port: Integer;
+    MAC: STRING;
+    SERVICE: STRING;
+    ON_OFF: Byte;
+
+    constructor Create(zcust_id: Integer; zcust_fio: String; zadress: String;
+      zip: String; zport: Integer; zmac: String; zservice: String);
+
+  end;
+
+
+
+
+  // Обьект для отключения/включения портов на свитчах в потоке
+type
+  TSwithONOFF = class(TThread)
+  public
+    thread: TThread;
+    TelnetCritSect: TRTLCriticalSection;
+    IP_LIST: TLIST;
+    CUR_POS: Integer;
+    constructor Create(Asyspended: Boolean);
+    destructor Destroy;
+  private
+  var
+    list_st, list_en: Integer;
+    task_pos: Integer;
+    list_pos: Integer;
+    response_result: String;
+    status_task: String;
+    CUR_CLIENT_IP: TCustomerIP;
+
+  var
+    ON_OFF: byte; // 0-отключать 1-включать 2-понизить 3-повысить
+    status_str: String;
+    Procedure SetStatus();
+    Procedure SetProgress();
+    Function WaitFor(response: String): Boolean;
+    procedure TelnetDataAvalable(Sender: TIdTelnet; const Buffer: TIdBytes);
+  protected
+    procedure Execute; override;
+  end;
+
+  // обьект для обработки в потоке пинга клиентских свитчеи
 type
   TTask = class(TThread)
   public
@@ -17,8 +259,35 @@ type
     // Обновление статуса проверки аипи адресов
     constructor Create(Asyspended: Boolean);
     destructor Destroy;
-    
-    type
+  private
+  var
+    telnet: TIdTelnet;
+    LastPortText: String;
+    curIP: TSwitch;
+    Procedure SetStatus();
+    Procedure SetProgress();
+    Procedure SetLog();
+    Procedure DeleteTask();
+    procedure SocketConnect(Sender: TObject; Socket: TCustomWinSocket);
+    procedure DataAvailable(Sender: TIdTelnet; const Buffer: String);
+    function ping(const AHost: string; const ATimes: Integer;
+      out AvgMS: Double): Boolean;
+  protected
+    procedure Execute; override;
+  end;
+
+type
+  TTelegramUser = class(TCollectionItem)
+  public
+
+    constructor Create(zuser_name: String; zuser_id: String);
+  private
+  var
+    user_id: String;
+    user_name: String;
+  end;
+
+type
   TConditions = class(TCollectionItem)
   public
   var
@@ -32,27 +301,168 @@ type
       ztelegram, zemail, zsms: Boolean);
   end;
 
+
+
+  // ******
 type
-  TEvents = class(TCollectionItem)
+  TClient = class(TCollectionItem)
   public
   var
-    Event: String;
-    login: String;
-    password : String;
-    port: String;
-    ip : String;
-    event_type : Integer;
-    mess : String;
-    send_sms,
-    send_telegram,
-    send_email : Boolean;
-
-    constructor Create(zevent: String; zlogin: String;
-      zpass:String;zport:String;zip:String;zevent_type:integer;zmess:String;zsend_sms,zsend_telegram,zsend_email:Boolean);
+    client_ip: String;
+    client_id: Integer;
+    client_name: String;
+    client_port: Integer;
+    constructor Create(zc_id: Integer; zc_ip: String; zc_name: String;
+      zc_port: Integer);
   end;
 
 
-procedure StartProgram();
+  type
+  TparseIP = record
+  IP : String;
+  Port : String;
+  end;
+
+type
+  TPinguinServerForm = class(TForm)
+    TrayIcon1: TTrayIcon;
+    TrayPopup: TPopupMenu;
+    N1: TMenuItem;
+    N2: TMenuItem;
+    GroupBox1: TGroupBox;
+    GridTaskList: TStringGrid;
+    GroupBox2: TGroupBox;
+    FDConnection1: TFDConnection;
+    FDQuery1: TFDQuery;
+    IdIcmpClient1: TIdIcmpClient;
+    OpenDialog1: TOpenDialog;
+    MainMenu1: TMainMenu;
+    N3: TMenuItem;
+    N4: TMenuItem;
+    N5: TMenuItem;
+    N6: TMenuItem;
+    PING1: TMenuItem;
+    N7: TMenuItem;
+    N8: TMenuItem;
+    N9: TMenuItem;
+    N10: TMenuItem;
+    N11: TMenuItem;
+    StatusBar1: TStatusBar;
+    SQLiteConnection: TFDConnection;
+    SQLiteQuery: TFDQuery;
+    N12: TMenuItem;
+    N13: TMenuItem;
+    IP1: TMenuItem;
+    IdUDPServer1: TIdUDPServer;
+    LogsMemo: TMemo;
+    IdSMTP1: TIdSMTP;
+    IdSSLIOHandlerSocketOpenSSL1: TIdSSLIOHandlerSocketOpenSSL;
+    IdMessage1: TIdMessage;
+    IdTelnet1: TIdTelnet;
+    IdTelnetServer1: TIdTelnetServer;
+    N15: TMenuItem;
+    FDTransaction1: TFDTransaction;
+    N16: TMenuItem;
+    TimerWaitStart: TTimer;
+    EndedTaskTimer: TTimer;
+    FDTransactionSave: TFDTransaction;
+    N17: TMenuItem;
+    ONOFF1: TMenuItem;
+    N14: TMenuItem;
+    ONOFF2: TMenuItem;
+    ThreadEvents: TIdThreadComponent;
+    HTTPServer: TIdHTTPServer;
+    GPON1: TMenuItem;
+    GPON2: TMenuItem;
+    GPON3: TMenuItem;
+    IdHTTP1: TIdHTTP;
+    IdUDPServerSNMPTRAP: TIdUDPServer;
+    IdHTTP2: TIdHTTP;
+    procedure IdIcmpClient1Reply(ASender: TComponent;
+      const AReplyStatus: TReplyStatus);
+    procedure FormCloseQuery(Sender: TObject; var CanClose: Boolean);
+    procedure N1Click(Sender: TObject);
+    procedure FormCreate(Sender: TObject);
+    procedure N2Click(Sender: TObject);
+    procedure N4Click(Sender: TObject);
+    procedure N7Click(Sender: TObject);
+    procedure N11Click(Sender: TObject);
+    procedure N10Click(Sender: TObject);
+    procedure N12Click(Sender: TObject);
+    procedure TrayIcon1DblClick(Sender: TObject);
+    procedure N13Click(Sender: TObject);
+    procedure IP1Click(Sender: TObject);
+    procedure GroupBox2Click(Sender: TObject);
+    procedure FDConnection1BeforeConnect(Sender: TObject);
+    procedure FormClose(Sender: TObject; var Action: TCloseAction);
+    procedure IdUDPServer1UDPRead(AThread: TIdUDPListenerThread;
+      const AData: TIdBytes; ABinding: TIdSocketHandle);
+    procedure IdUDPServer1AfterBind(Sender: TObject);
+    procedure IdUDPServer1UDPException(AThread: TIdUDPListenerThread;
+      ABinding: TIdSocketHandle; const AMessage: string;
+      const AExceptionClass: TClass);
+    procedure IdSMTP1Connected(Sender: TObject);
+    procedure IdSMTP1Disconnected(Sender: TObject);
+    procedure PING1Click(Sender: TObject);
+    procedure FDConnection1BeforeDisconnect(Sender: TObject);
+    procedure IdIcmpClient1Status(ASender: TObject; const AStatus: TIdStatus;
+      const AStatusText: string);
+    procedure IdTelnetServer1Connect(AContext: TIdContext);
+    procedure IdTelnetServer1Disconnect(AContext: TIdContext);
+    procedure IdTelnetServer1Execute(AContext: TIdContext);
+    procedure N15Click(Sender: TObject);
+    procedure IdTelnet1DataAvailable(Sender: TIdTelnet; const Buffer: TIdBytes);
+    procedure N16Click(Sender: TObject);
+    procedure TimerWaitStartTimer(Sender: TObject);
+    procedure EndedTaskTimerTimer(Sender: TObject);
+    procedure N17Click(Sender: TObject);
+    procedure FDConnection1Error(ASender: TObject;
+      const AInitiator: IFDStanObject; var AException: Exception);
+    procedure ONOFF1Click(Sender: TObject);
+    procedure ThreadEventsStopped(Sender: TIdThreadComponent);
+    procedure ThreadEventsRun(Sender: TIdThreadComponent);
+    procedure ThreadEventsException(Sender: TIdThreadComponent;
+      AException: Exception);
+    procedure HTTPServerCommandGet(AContext: TIdContext;
+      ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo);
+    procedure GPON2Click(Sender: TObject);
+    procedure GPON3Click(Sender: TObject);
+    procedure N5Click(Sender: TObject);
+    procedure IdUDPServerSNMPTRAPUDPRead(AThread: TIdUDPListenerThread;
+      const AData: TIdBytes; ABinding: TIdSocketHandle);
+    procedure IdUDPServerSNMPTRAPAfterBind(Sender: TObject);
+    procedure IdUDPServerSNMPTRAPUDPException(AThread: TIdUDPListenerThread;
+      ABinding: TIdSocketHandle; const AMessage: string;
+      const AExceptionClass: TClass);
+
+  private
+    { Private declarations }
+  public
+
+  var
+    sms: SMSC;
+    // список всех выполненных адресов вкл/откл порта
+    GLOBAL_SUCCESS_IP: TLIST;
+    SELECT_EVENT : TEvents;
+    balance: String;
+    response_result: String;
+    Client_List: TLIST;
+    TelegramUsers: TLIST;
+    CONDITION_LIST: TLIST;
+    EVENTS_LIST : TLIST;
+    Conf: TConf;
+    IP_LIST: TLIST;
+    Task_List: TLIST;
+
+    ON_LIST, OFF_LIST: TLIST;
+    RESTARTED_TASK_ON: Boolean;
+    RESTARTED_TASK_OFF: Boolean;
+
+    MonTaskPos : Integer;
+
+    Ini: TIniFile;
+    send_json: String;
+    procedure StartProgram();
     procedure SConnect(Sender: TObject; Socket: TCustomWinSocket);
     { Public declarations }
     // Загрузка Конфигурации из ини фаила
@@ -84,7 +494,9 @@ procedure StartProgram();
     // Обновить список аипи либо через фаил либо через базу
     Procedure UpdateListFromTime(time_update: Byte);
     // Получить список клиентов из базы для отключения портов или включения
-    Function GetCustomerIP(get_id: Byte; param1: String): TLIST;
+    Function GetCustomerIP(get_id: Byte; param1: String;selectcity:Byte): TLIST;
+    // Получить GPON клиентов
+    function  GetGPON_Client(MINUS_OR_PLUS : BOOLEAN):Tlist;
     // Получить Список Выполненных
     Function GetSuccessON_OFF(ON_OFF:BOOLEAN): TStringList;
     // Изменить статус в базе при выполнении или невыполнеии операции
@@ -105,6 +517,7 @@ procedure StartProgram();
     Procedure SetNewEvents(event:String;ip:String;password:String;login:String;port:String;event_id:Integer;mess:String;send_sms,send_telegram,send_email:Boolean);
     Procedure DeleteEvents(Event: String);
     Procedure DeleteCondition(Cond: String);
+    Function GetFileFromIP(txt: String):String;
     // запись в лог фаил 1-суслог 2-системный лог
     Procedure LogFile(txt: String; f_id: Byte);
     // получить адрес реальный из афона
@@ -116,6 +529,7 @@ procedure StartProgram();
     Procedure ProcessCommand(MESS: String; IP: String; Abind: TIdSocketHandle);
     // Функция выбора реагирования на входящее событие
     Procedure StartEvents(Event:TEvents;Mess:String;IP:String;Port:Word);
+    Procedure StartEventONOFF(EVENT:TEVENTS);
     // Получить адрес аипи и порт из строки syslog
     Function ParseIPFromSyslogString(MESS:String;ip,port:String):Boolean;
     // Отправить всем пользователяи из Телеграма которые подписаны
@@ -123,9 +537,11 @@ procedure StartProgram();
       adress: String; IP: String);
     Procedure SendMail(body: TStringList);
     // запуск потоков для вкл отключениях портов у клиентов
-    Procedure StartONOFF(ON_OFF: Boolean; List_IP: TLIST);
+    Procedure StartONOFF(ON_OFF: Byte; List_IP: TLIST);
+    // запуск потока вкл/откл - gpon оборудования
+    Procedure StartONOFF_GPON(ON_OFF: Boolean; GPON_CLIENT: TLIST);
     // сигнал о завершении работы потоков вкл/откл портов
-    Procedure EndedOnOffTask(ON_OFF: Boolean; IP_LIST: TLIST);
+    Procedure EndedOnOffTask(ON_OFF: Byte; IP_LIST: TLIST);
     Function WaitFor(response: String): Boolean;
     // Отключать порт на оборудовании huawei
     procedure SetHuawei_ON_OFF(ip:String;port:String;password:String;on_off:Boolean);
@@ -133,28 +549,270 @@ procedure StartProgram();
     procedure SetDLink_ON_OFF(ip:String;port:String;login,password:String;on_off:Boolean);
     // получить наименование события
     function GetEventType(event_type:Integer):String;
+
+     procedure SetGPON_ON_OFF(ip:String;mac:String;login,password:String;tv_internet:Boolean;on_off:Boolean);
+
+     function GetIPFromString(sinp: string): TparseIP;
   end;
-  
-  Procedure TPinguinServerForm.SendAllTelegram(bot: TTelegramObject; MESS: String;
+
+var
+  PinguinServerForm: TPinguinServerForm;
+  ObjectBot: TTelegramObject;
+
+Const
+  C_GETIP = 'get_ip_list';
+
+implementation
+
+{$R *.dfm}
+
+uses conf_unit, about_unit, iplist_unit, selectunit, activation_unit;
+
+function TranslitRus2Lat(const str: string): string;
+const
+  RArrayL = 'абвгдеёжзийклмнопрстуфхцчшщьыъэюя';
+  RArrayU = 'АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЬЫЪЭЮЯ';
+  colChar = 33;
+  arr: array [1 .. 2, 1 .. colChar] of string = (('a', 'b', 'v', 'g', 'd', 'e',
+    'yo', 'zh', 'z', 'i', 'y', 'k', 'l', 'm', 'n', 'o', 'p', 'r', 's', 't', 'u',
+    'f', 'kh', 'ts', 'ch', 'sh', 'shch', '''', 'y', '''', 'e', 'yu', 'ya'),
+    ('A', 'B', 'V', 'G', 'D', 'E', 'Yo', 'Zh', 'Z', 'I', 'Y', 'K', 'L', 'M',
+    'N', 'O', 'P', 'R', 'S', 'T', 'U', 'F', 'Kh', 'Ts', 'Ch', 'Sh', 'Shch',
+    '''', 'Y', '''', 'E', 'Yu', 'Ya'));
+var
+  i: Integer;
+  LenS: Integer;
+  p: Integer;
+  d: Byte;
+begin
+  result := '';
+  LenS := length(str);
+  for i := 1 to LenS do
+  begin
+    d := 1;
+    p := pos(str[i], RArrayL);
+    if p = 0 then
+    begin
+      p := pos(str[i], RArrayU);
+      d := 2
+    end;
+    if p <> 0 then
+      result := result + arr[d, p]
+    else
+      result := result + str[i]; // если не русская буква, то берем исходную
+  end;
+end;
+
+constructor TCustomerIP.Create(zcust_id: Integer; zcust_fio: String;
+  zadress: String; zip: String; zport: Integer; zmac: String; zservice: String);
+begin
+  CUSTOMER_ID := zcust_id;
+  customer_fio := zcust_fio;
+  adress := zadress;
+  IP := zip;
+  port := zport;
+  MAC := zmac;
+  SERVICE := zservice;
+end;
+
+procedure TTask.DataAvailable(Sender: TIdTelnet; const Buffer: String);
+begin
+  LastPortText := LastPortText + Buffer;
+end;
+
+Procedure TPinguinServerForm.SendMail(body: TStringList);
+begin
+  try
+    IdSMTP1.Host := Conf.email_host;
+    IdSMTP1.port := Conf.email_port;
+    IdSMTP1.Username := Conf.email_username;
+    IdSMTP1.Password := Conf.email_password;
+    IdSMTP1.HeloName := 'Hello';
+
+    IdSSLIOHandlerSocketOpenSSL1.Destination := IdSMTP1.Host + ':' +
+      IntToStr(IdSMTP1.port);
+    IdSSLIOHandlerSocketOpenSSL1.Host := IdSMTP1.Host;
+    IdSSLIOHandlerSocketOpenSSL1.port := IdSMTP1.port;
+    IdSSLIOHandlerSocketOpenSSL1.DefaultPort := 0;
+    IdSSLIOHandlerSocketOpenSSL1.SSLOptions.Method := sslvSSLv3;
+    IdSSLIOHandlerSocketOpenSSL1.SSLOptions.Mode := sslmClient;
+
+    IdSMTP1.UseTLS := utUseRequireTLS;
+
+    IdMessage1.Sender.Address := 'Kainar@syslogbot.ru';
+    IdMessage1.ContentType := 'text/html; charset=utf-8';
+    IdMessage1.From.Address := Conf.email_recipients;
+    IdMessage1.From.Text := 'Сообщение от SYSLOG PINGUIN SERVER' +
+      FormatDateTime('yyyy-mm-dd hh:nn:s', Now);
+    IdMessage1.Recipients.EMailAddresses := Conf.email_recipients;
+    IdMessage1.body.clear;
+    IdMessage1.body.AddStrings(body);
+    IdMessage1.From.Name := 'Kainar NET SYSLOG';
+    IdMessage1.Subject := 'ERROR MESSAGE';
+    IdMessage1.IsEncoded := true;
+
+    IdMessage1.Headers.Add('Mesage #: 1');
+    IdMessage1.Headers.Add('From name:' + IdMessage1.From.Name);
+    IdMessage1.Headers.Add('From address:' + IdMessage1.From.Address);
+    IdMessage1.Headers.Add('Subject: ' + IdMessage1.Subject);
+    IdMessage1.Headers.Add('From:' + IdMessage1.From.Address);
+    IdMessage1.Headers.Add('Recipients: ' +
+      IdMessage1.Recipients.EMailAddresses);
+
+    IdSMTP1.Connect;
+    if (IdSMTP1.Connected) then
+    begin
+
+      if (Conf.write_log) then
+        LogFile('Письмо Отправлено адресатам ' + Conf.email_recipients, 2);
+      IdSMTP1.Send(IdMessage1);
+      Log('Письмо Отправлено адресатам ' + Conf.email_recipients, false);
+      IdSMTP1.Disconnect();
+    end;
+
+  except
+    on E: EXCEPTION do
+    begin
+      if (IdSMTP1.Connected) then
+        IdSMTP1.Disconnect();
+      Log('error mail ' + E.Message, false);
+      if (Conf.write_log) then
+        LogFile('error mail ' + E.Message, 2);
+    end;
+
+  end;
+end;
+
+// Процедура в которую возвращается ответ от бота
+procedure TelegramBotCallBack(user_id, user_name, user_message: String);
+begin
+  ///
+  with PinguinServerForm do
+  begin
+    if (user_message = 'write me syslog') then
+    begin
+      SetAddTelegramUser(user_name, user_id);
+      ObjectBot.SendMessageTelegram(user_id,
+        ' ' + user_name + ' you subsribe *SYSLOG BOT KAINAR NET*');
+    end;
+    if (user_message = 'delete me syslog') then
+    begin
+      DeleteTelegramUser(user_id);
+      ObjectBot.SendMessageTelegram(user_id,
+        ' ' + user_name + ' you unsubsribe *SYSLOG BOT KAINAR NET*');
+    end;
+    if (user_message = 'get bot status') then
+      ObjectBot.SendMessageTelegram(user_id, 'bot syslog active');
+
+    Log(user_id + ' ' + user_name + ' ' + user_message, false);
+    // LogFile(user_name+' '+user_message,2);
+  end;
+end;
+
+constructor TTaskObject.Create(task_name: String; task_status: String;
+  obj: TObject);
+begin
+  ///
+end;
+
+procedure TTaskObject.TerminateTask();
+begin
+  /// ***
+end;
+
+function TTask.ping(const AHost: string; const ATimes: Integer;
+  out AvgMS: Double): Boolean;
+var
+  R: array of Cardinal;
+  i: Integer;
+begin
+  result := true;
+  AvgMS := 0;
+  if ATimes > 0 then
+    with TIdIcmpClient.Create(nil) do
+      try
+        Host := AHost;
+        ReceiveTimeout := 999; // TimeOut du ping
+        SetLength(R, ATimes);
+        { Pinguer le client }
+        for i := 0 to Pred(ATimes) do
+        begin
+          try
+            ping();
+            Application.ProcessMessages; // ne bloque pas l'application
+            R[i] := ReplyStatus.MsRoundTripTime;
+          except
+            result := false;
+            Exit;
+          end;
+          if ReplyStatus.ReplyStatusType <> rsEcho Then
+            result := false; // pas d'йcho, on renvoi false.
+        end;
+        { Faire une moyenne }
+        for i := Low(R) to High(R) do
+        begin
+          Application.ProcessMessages;
+          AvgMS := AvgMS + R[i];
+        end;
+        AvgMS := AvgMS / i;
+      finally
+        Free;
+      end;
+end;
+
+Procedure TPinguinServerForm.SendAllTelegram(bot: TTelegramObject; MESS: String;
   adress: String; IP: String);
 var
   i: Integer;
   Client: TTelegramUser;
   user_id, user_name, send_mess: String;
+  user_split : String;
+
+  str:TStringList;
 begin
   try
     for i := 0 to TelegramUsers.Count - 1 do
     begin
       Client := TTelegramUser(TelegramUsers[i]);
       user_id := Client.user_id;
-      user_name := Client.user_name;
-      send_mess := ('ALARM IN SYSLOG SERVER' + ' Adres :' +
-        TranslitRus2Lat(adress) + ' IP :' + IP + ' Message : ' + MESS);
+        user_name := Client.user_name;
+      send_mess := ('ALARM IN SYSLOG SERVER' + ' IP :' + IP + ' Message : ' + MESS);
+          //  user_id := '615251642';
+   //    IdHTTP2.Get('http://192.168.1.15:1818/API/'+user_id+'/'+MESS);
+    //  bot.SendMessageTelegram(user_id, send_mess);
 
-      bot.SendMessageTelegram(user_id, send_mess);
+      str:=TStringList.Create(); // создадим переменную str
+
+      str.Add('command=send_telegram');     // добавим параметр name
+
+      str.Add('message='+MESS);   // добавим параметр password
+      str.Add('chat_id='+user_id);
+
+     IdHTTP1.Post('http://192.168.1.15:1818/API/',str);
+
+
       LogFile('Пользователю ' + user_name + ' Отправленно Сообщение ' +
         MESS, 2);
     end;
+
+    //  send_mess := ('ALARM IN SYSLOG SERVER' + ' Adres :' +
+    //   TranslitRus2Lat(adress) + ' IP :' + IP + ' Message : ' + MESS);
+   //   user_split := '453dfgfdg';
+
+    // IdHTTP1.Get('http://localhost:1818/API/'+IntToStr(user_id)+'/'+send_mess);
+
+   {  str:=TStringList.Create(); // создадим переменную str
+
+str.Add('command=send_telegram');     // добавим параметр name
+
+str.Add('message='+MESS);   // добавим параметр password
+str.Add('chat_id=490768975-615251642-682570651-670496196-1041861768-1781646312');
+
+
+     IdHTTP1.Post('http://192.168.1.15:1818/API/',str);  }
+  //   FreeAndNil(str);
+     //THttp.FreeOnRelease;
+
   EXCEPT
     on E: EXCEPTION do
     begin
@@ -164,4 +822,4262 @@ begin
   end;
 end;
 
+procedure TPinguinServerForm.PING1Click(Sender: TObject);
+begin
+  StartPing;
+end;
+ // как реагировать на входящие события
+Procedure TPinguinServerForm.StartEvents(Event:TEvents;Mess:String;IP:String;Port:Word);
+var event_id : Integer;
+    bodyemail : TStringList;
+    send_message : String;
+    parseIP : TparseIP;
 
+begin
+ //
+ event_id := Event.event_type;
+
+   parseIP := GetIPFromString(Mess);
+
+   LogFile('Сработало событие '+Mess+'  пытаюсь получить IP '+parseIP.IP+':'+parseIP.Port,8);
+
+ if(Event.event_type > 1 ) then Event.ip := parseIP.IP;
+ if(Event.event_type > 1 ) then Event.port := parseIP.Port;
+
+         LogFile('присвоен ip '+Event.ip+':'+Event.port,8);
+
+ StartEventONOFF(Event);
+
+ //  SELECT_EVENT := Event;
+  /// ThreadEvents.Start;
+
+end;
+
+
+function TPinguinServerForm.ParseIPFromSyslogString(MESS:String;ip,port:String):Boolean;
+var
+ q,s:string; // наша строка в двух переменных
+ Massiv1:array of Integer; // временный массив №1
+ i:integer; // универсальный счетчик
+ nach,konec:integer; // позиции начала и конца IP-адреса
+ blok1,blok2,blok3,blok4:string; // блоки IP-адреса представленные строкой
+ blok1i,blok2i,blok3i,blok4i:integer; // блоки IP-адреса представленные числом
+ a:integer; b:string; // проверочные переменные
+
+
+ port_pos_in : Integer;
+begin
+
+
+port_pos_in := Pos('Port',MESS);
+if (port_pos_in>0) then
+begin
+
+end;
+
+
+ q:=MESS;
+  s:=q; // дублируем
+ Massiv1:=nil; // чистим массив
+
+ i:=length(s); // делаем переменную неравную нулю
+ while i>0 do // ищем все позиции точек и записываем позиции в массив
+ begin
+  i:=pos('.',s); // ищем точку в строке
+  if i>0 then
+   begin
+    SetLength(Massiv1, Length(Massiv1)+1); // увеличить размер массива на 1
+    Massiv1[Length(Massiv1)-1]:=i; // присваиваем  последнему элементу массива номер позиции точки в строке
+    Delete(s,i,1); // удаляем эту точку из строки
+    Insert(',',s,i); // вставляем запятую вместо точки
+   end;
+ end;
+
+ for i:=0 to Length(Massiv1)-1 do // перебор по одному элементов массива
+ begin //-----------------------------------------------------------цикл--------------------------------------------------------------
+ //=============================//
+ // Massiv1[ i ] - первая точка //
+ // Massiv1[i+1] - вторая точка //
+ // Massiv1[i+2] - третья точка //
+ //=============================//
+ if (Massiv1[ i ]<>null) and (Massiv1[i+1]<>null) and (Massiv1[i+2]<>null) then // три позиции подряд не должны быть пустые
+  if ((Massiv1[i+1]-Massiv1[ i ])>1) and ((Massiv1[i+1]-Massiv1[ i ])<5) and ((Massiv1[i+2]-Massiv1[i+1])>1) and ((Massiv1[i+2]-Massiv1[i+1])<5) then // расстояние между ними 2-4
+   begin //-----------------------------------------------------------условие---------------------------------------------------------
+    nach:=0;
+    konec:=0;
+
+    //-------------ищем начало IP-------------
+    if q[Massiv1[i]-1] in ['0'..'9'] then // первый символ перед первой точкой от 0 до 9
+    begin
+     nach:=Massiv1[i]-1;
+     if q[Massiv1[i]-2] in ['0'..'9'] then // второй символ перед первой точкой от 0 до 9
+     begin
+      nach:=Massiv1[i]-2;
+      if q[Massiv1[i]-3] in ['1'..'2'] then  // третий символ перед первой точкой от 1 до 2
+      begin
+       nach:=Massiv1[i]-3;
+      end;
+     end;
+    end;
+
+    //-------------ищем конец IP-------------
+    if q[Massiv1[i+2]+1] in ['1'..'9'] then  // первый символ  после последней точки от 1 до 9
+    begin
+     konec:=Massiv1[i+2]+1;
+     if q[Massiv1[i+2]+2] in ['0'..'9'] then // второй символ  после последней точки от 0 до 9
+     begin
+      konec:=Massiv1[i+2]+2;
+      if q[Massiv1[i+2]+3] in ['0'..'9'] then // тертий символ  после последней точки от 0 до 9
+      begin
+       konec:=Massiv1[i+2]+3;
+      end;
+     end;
+    end;
+
+    //-------------1-й блок IP адреса-------------
+    blok1:=''; // обнуляем
+    blok1i:=256; // присваеиваем переменной значение вне диапазона 0-255
+    blok1:=copy(q,nach,Massiv1[i]-nach); // копируем 1-й блок IP-адреса из строки q
+    b:=blok1; for a:=1 to length(b) do if b[a] in ['0'..'9'] then else blok1:=''; // каждый символ блока должен быть цифрой
+    if blok1<>'' then blok1i:=StrToInt(blok1); // переводим строку в число
+
+    //-------------2-й блок IP адреса-------------
+    blok2:=''; // обнуляем
+    blok2i:=256; // присваеиваем переменной значение вне диапазона 0-255
+    blok2:=copy(q,Massiv1[i]+1,Massiv1[i+1]-Massiv1[i]-1); // копируем 2-й блок IP-адреса из строки q
+    b:=blok2; for a:=1 to length(b) do if b[a] in ['0'..'9'] then else blok2:=''; // каждый символ блока должен быть цифрой
+    if blok2<>'' then blok2i:=StrToInt(blok2); // переводим строку в число
+
+    //-------------3-й блок IP адреса-------------
+    blok3:=''; // обнуляем
+    blok3i:=256; // присваеиваем переменной значение вне диапазона 0-255
+    blok3:=copy(q,Massiv1[i+1]+1,Massiv1[i+2]-Massiv1[i+1]-1); // копируем 3-й блок IP-адреса из строки q
+    b:=blok3; for a:=1 to length(b) do if b[a] in ['0'..'9'] then else blok3:=''; // каждый символ блока должен быть цифрой
+    if blok3<>'' then blok3i:=StrToInt(blok3); // переводим строку в число
+
+    //-------------4-й блок IP адреса-------------
+    blok4:=''; // обнуляем
+    blok4i:=256; // присваеиваем переменной значение вне диапазона 0-255
+    blok4:=copy(q,Massiv1[i+2]+1,konec-Massiv1[i+2]); // копируем 4-й блок IP-адреса из строки q
+    b:=blok4; for a:=1 to length(b) do if b[a] in ['0'..'9'] then else blok4:=''; // каждый символ блока должен быть цифрой
+    if blok4<>'' then blok4i:=StrToInt(blok4); // переводим строку в число
+
+    //-------------условие для вставки IP-адреса-------------
+    if (q[nach]<>'') and (nach<>0) // начало IP-адреса не должно быть пустым
+    and (q[konec]<>'') and (konec<>0) // конец IP-адреса не должен быть пустым
+    and (blok1i>0) and (blok1i<256) // 1й блок должен быть от 1 до 255, так как IP-адрес не может начинаться с нуля
+    and (blok2i>=0) and (blok2i<256) // 2й блок должен быть от 0 до 255
+    and (blok3i>=0) and (blok3i<256) // 3й блок должен быть от 0 до 255
+    and (blok4i>0) and (blok4i<256) // 4й блок должен быть от 1 до 255, так как IP-адрес не может заканчиваться на ноль
+    then ip :=(IntToStr(blok1i)+'.'+IntToStr(blok2i)+'.'+IntToStr(blok3i)+'.'+IntToStr(blok4i)); // выводим IP-адрес в список
+
+   end; //-----------------------------------------------------------условие----------------------------------------------------------
+ end; //-----------------------------------------------------------цикл---------------------------------------------------------------
+  Result := True;
+ end;
+
+
+Procedure TPinguinServerForm.ProcessCommand(MESS: String; IP: String;
+  Abind: TIdSocketHandle);
+var
+  bodyemail: TStringList;
+  i: Integer;
+  Cond: TConditions;
+  Events : TEvents;
+  rlist : Tlist;
+  cip : TCustomerIP;
+  send_message : String;
+begin
+  // ***
+  // mess := GetAdressFromDB(ABinding.PeerIP)+' '+mess;
+  Log(MESS, false);
+  // Log(ABinding.PeerIP+' '+IntToStr(ABinding.PeerPort),false);
+  if (Conf.write_log) then
+    LogFile(MESS, 1);
+
+
+  //Реагирование на события events
+  for i := 0 to EVENTS_LIST.Count-1 do
+    begin
+    Events := TEvents(EVENTS_LIST[i]);
+     // как реагировать на произошедшее событие
+    if(pos(Events.Event,MESS) > 0) then
+    begin
+    StartEvents(Events,MESS,IP,Abind.PeerPort);
+
+    end;
+
+  //**
+   end;
+
+
+  for i := 0 to CONDITION_LIST.Count - 1 do
+  begin
+    Cond := TConditions(CONDITION_LIST[i]);
+
+    if (pos(Cond.CONDITION_TEXT, MESS) > 0) then
+    begin
+
+      if (length(Cond.MESS) > 0) then
+        MESS := Cond.MESS;
+      // **** send sms
+      if ((Conf.send_sms) and (Cond.send_sms)) then
+      begin
+        sms.send_sms(Conf.smsc_phone, MESS);
+        LogFile('Отправлено смс на номера: ' + Conf.smsc_phone, 2);
+      end;
+      // *** send sms end
+      // *** send telegram
+      if ((Conf.send_telegram) and (Cond.send_telegram)) then
+      begin
+        SendAllTelegram(ObjectBot, MESS, { GetAdressFromDB(IP) } '', IP);
+        LogFile('Сообщение Отправлено Всем в Telegram', 2);
+      end;
+      // *** send telegram end
+
+      if ((Conf.send_email) and (Cond.send_email)) then
+      begin
+        bodyemail := TStringList.Create;
+        bodyemail.clear;
+        bodyemail.Add('IP : ' + IP);
+        bodyemail.Add('Адресс : ' + '' { GetAdressFromDB(IP) } );
+        bodyemail.Add('Сообщение : ' + MESS);
+        SendMail(bodyemail);
+      end;
+
+    end;
+
+  end;
+
+  { if ((pos('Port blocked', mess) > 0) or (pos('LBD loop occurred', mess) > 0) or
+    (pos('Loop detection restarted', mess) > 0) or
+    (pos('Configuration Testing Protocol detects a loop', mess) > 0) or
+    (pos('Broadcast storm', mess) > 0) or (pos('Unicast storm', mess) > 0) or
+    (pos('External Alarm Channel', mess) > 0)) then
+    begin
+    if ((pos('External Alarm Channel', mess) < 1) and (Conf.send_sms)) then
+    begin
+
+    end;
+
+   }
+
+
+end;
+
+function TPinguinServerForm.SplitList(lst: TStrings; delim: Char): String;
+var
+  i: Integer;
+  res: String;
+begin
+  res := '';
+  for i := 0 to lst.Count - 1 do
+  begin
+    if (i = 0) then
+      res := lst[i]
+    else
+      res := res + ',' + lst[i];
+  end;
+  result := res;
+end;
+
+function TPinguinServerForm.Explode(S: String; Delimiter: Char): Strings;
+var
+  SList: TStrings;
+  iCount: Integer;
+begin
+  SetLength(result, 0);
+  if (length(S) = 0) then
+    Exit;
+  SList := TStringList.Create;
+  SList.Delimiter := Delimiter;
+  SList.DelimitedText := S;
+  SetLength(result, SList.Count);
+  for iCount := 0 to SList.Count - 1 do
+    result[iCount] := SList.Strings[iCount];
+  SList.Free;
+end;
+
+function TPinguinServerForm.Explode2(const delim, str: string): TStringList;
+var
+  offset: Integer;
+  cur: Integer;
+  dl: Integer;
+begin
+  result := TStringList.Create;
+  dl := length(delim);
+  offset := 1;
+  while true do
+  begin
+    cur := PosEx(delim, str, offset);
+    if cur > 0 then
+      result.Add(Copy(str, offset, cur - offset))
+    else
+    begin
+      result.Add(Copy(str, offset, length(str) - offset + 1));
+      Break
+    end;
+    offset := cur + dl;
+  end;
+end;
+
+Function TPinguinServerForm.GetAdressFromDB(IP: String): String;
+begin
+  try
+    FDQuery1.Active := false;
+    FDQuery1.SQL.clear;
+    FDQuery1.SQL.Add
+      (' SELECT s.street_short || '' ''|| s.street_name as street,h.house_no');
+    FDQuery1.SQL.Add
+      (',E.IP, E.parent_port, E.MAC,E.e_admin, E.E_PASS, E.last_update');
+    FDQuery1.SQL.Add('FROM EQUIPMENT E');
+    FDQuery1.SQL.Add('left outer join house h on (e.house_id = h.house_id)');
+    FDQuery1.SQL.Add('left outer join street s on (s.street_id = h.street_id)');
+    FDQuery1.SQL.Add('left outer join objects o on (e.eq_group = o.o_id)');
+    FDQuery1.SQL.Add('WHERE E.ip=' + QuotedStr(Trim(IP)));
+
+    FDQuery1.Active := true;
+
+    if (FDQuery1.RecordCount > 0) then
+    begin
+      result := FDQuery1.FieldByName('STREET').AsString + ' дом: ' +
+        FDQuery1.FieldByName('HOUSE_NO').AsString;
+    end
+    else
+      result := 'not found';
+  EXCEPT
+    on E: EXCEPTION do
+    begin
+      result := 'not found';
+    end;
+
+  end;
+end;
+
+// Если файл не существует, то вместо размера файла функция верн¸т -1
+function GetFileSize(FileName: String): Integer;
+var
+  FS: TFileStream;
+begin
+  try
+    FS := TFileStream.Create(FileName, fmOpenRead);
+  except
+    result := -1;
+  end;
+  if result <> -1 then
+    result := FS.Size;
+  FS.Free;
+end;
+
+  function str_explode(const delim, str: string):TStringlist;
+var p,ps,pe:integer;
+begin
+  result:=TStringList.Create;
+  if length(str)>0 then begin
+    ps:=1;
+    p:=pos(delim,str);
+    while p>0 do begin
+     pe:=p-ps;
+     if p<>ps then result.Add(copy(str,ps,pe));
+     ps:=p+length(delim);
+     p:=posEx(delim,str,ps);
+    end;
+    if ps<=length(str) then result.Add(copy(str,ps,length(str)));
+  end;
+end;
+
+
+Function TPinguinServerForm.GetFileFromIP(txt: String):String;
+var
+  podset : String;
+  result_path : String;
+  explode_str : TstringList;
+  parseIP : TparseIP;
+begin
+podset := 'n_a';
+result_path := 'n_a';
+// <166>Oct 26 00:00:14 10.77.9.167 INFO: Port 7 link down
+// <166>Oct 26 00:00:13 10.77.10.129 INFO: Port 4 link up, 100Mbps  FULL duplex
+//  <131>Oct 26 00:00:34 topvision1 CMTS[TOPVISION]: <0> scg_db last information repeated 2 times.
+  parseIP := GetIPFromString(txt);
+
+if(Length(parseIP.IP)>6)and(parseIP.IP<>'127.0..1') then
+begin
+explode_str := str_explode('.',parseIP.IP);
+if((explode_str.Count)>3) then begin podset := explode_str[2];  end;
+
+  result_path := podset+'\'+parseIP.IP;
+end;
+
+   Result := result_path;
+end;
+
+
+Procedure TPinguinServerForm.LogFile(txt: String; f_id: Byte);
+var
+  txtfile: TextFile;
+  txFileName: String;
+  path: String;
+var
+  max_fileSize: Int64;
+begin
+  try
+    max_fileSize := (5 * 1048576);
+
+    case f_id of
+      1:
+        txFileName := 'syslog\'+GetFileFromIP(txt)+'\syslog_' + FormatDateTime('dd.mm.yyyy',
+          Date) + '.txt';
+      2:
+        begin
+          txFileName := 'server\serverlog_' + FormatDateTime('dd.mm.yyyy',
+            Date) + '.txt';
+          txt := '[' + DateTimeToStr(Now) + '] ' + txt;
+        end;
+      3:
+        begin
+          txFileName := 'pingtask\pingtask_' + FormatDateTime('dd.mm.yyyy',
+            Date) + '.txt';
+          txt := '[' + DateTimeToStr(Now) + '] ' + txt;
+        end;
+      4:
+        begin
+          txFileName := 'onofftask\onofftask_' + FormatDateTime('dd.mm.yyyy',
+            Date) + '.txt';
+          txt := '[' + DateTimeToStr(Now) + '] ' + txt;
+        end
+    else
+      txFileName := 'notnumered.txt';
+    end;
+
+    // для начало нужно собрать файла, куда мы сохраняем текст
+    path := ExtractFilePath(Application.ExeName) + 'logs\' + txFileName;
+      ForceDirectories(ExtractFilePath(path));
+    // ассоциируем название файла с файловой переменной
+    AssignFile(txtfile, path);
+    // выключаем проверку ошибок ввода-вывода
+    // это такой вариант - для ленивых, чтобы и программа не парилась
+    // и нам чтобы не реализовывать все проверки по-честному
+{$I-}
+    if not FileExists(path) then
+      // файла нет - создадим
+      Rewrite(txtfile)
+    else
+      // если есть - откроем и установим указатель записи в конец
+      Append(txtfile);
+{$I+}
+    // пишем наш текст в открытый файл
+    Write(txtfile, txt + #13#10);
+    // освобождаем дескрипторы, закрываем файл
+    Closefile(txtfile);
+  EXCEPT
+    on E: EXCEPTION do
+    BEGIN
+      LogFile(E.Message, 2);
+    END;
+
+  end;
+end;
+
+constructor TTelegramUser.Create(zuser_name: String; zuser_id: String);
+begin
+  user_id := zuser_id;
+  user_name := zuser_name;
+end;
+
+constructor TEvents.Create(zevent: String; zlogin: String;
+      zpass:String;zport:String;zip:String;zevent_type:integer;
+      zmess:String;zsend_sms,zsend_telegram,zsend_email:Boolean);
+      begin
+        Event := zevent;
+        login := zlogin;
+        password := zpass;
+        port := zport;
+        ip := zip;
+        event_type := zevent_type;
+        mess := zmess;
+        send_sms := zsend_sms;
+        send_telegram:= zsend_telegram;
+        send_email := zsend_email;
+      end;
+
+
+constructor TConditions.Create(zcond_text: String; zmess: String;
+  ztelegram, zemail, zsms: Boolean);
+begin
+  CONDITION_TEXT := zcond_text;
+  send_telegram := ztelegram;
+  send_email := zemail;
+  send_sms := zsms;
+  MESS := zmess;
+end;
+
+constructor TClient.Create(zc_id: Integer; zc_ip: String; zc_name: String;
+  zc_port: Integer);
+begin
+  client_ip := zc_ip;
+  client_id := zc_id;
+  client_name := zc_name;
+  client_port := zc_port;
+end;
+
+procedure TPinguinServerForm.FDConnection1BeforeConnect(Sender: TObject);
+begin
+  Log('Подключен к БД FIREBIRD..', false);
+end;
+
+procedure TPinguinServerForm.FDConnection1BeforeDisconnect(Sender: TObject);
+begin
+  Log('Отключен от БД FIREBIRD..', false);
+end;
+
+procedure TPinguinServerForm.FDConnection1Error(ASender: TObject;
+  const AInitiator: IFDStanObject; var AException: Exception);
+begin
+  Log('Ошибка соединения с базой данных....'+AException.Message,false);
+
+end;
+
+Procedure TPinguinServerForm.FireBirdInit;
+begin
+  FDConnection1.LoginPrompt := false;
+  With FDConnection1.Params do
+  begin
+    clear;
+    Add('DriverID=FB');
+    Add('Server=' + Conf.base_server);
+    Add('Database=' + Conf.base_name);
+    Add('User_Name=' + Conf.base_user);
+    Add('Password=' + Conf.base_password);
+    Add('CharacterSet=UTF8');
+  end;
+  FDQuery1.Connection := FDConnection1;
+end;
+
+// Инициализация Внутреннеи базы
+procedure TPinguinServerForm.SQLiteInit();
+begin
+  SQLiteConnection.DriverName := 'SQLite';
+  SQLiteConnection.LoginPrompt := false;
+  SQLiteConnection.Params.Values['Database'] := ExtractFilePath(ParamStr(0)) +
+    'CLIENTS.db';
+  SQLiteConnection.Connected := true;
+  SQLiteQuery.Connection := SQLiteConnection;
+  SQLiteQuery.SQL.Text := 'CREATE TABLE IF NOT EXISTS CLIENTS (' +
+    'ID          INTEGER PRIMARY KEY AUTOINCREMENT ' + 'UNIQUE ' + 'NOT NULL, '
+    + ' client_name TEXT,' + '  client_ip   TEXT    NOT NULL, ' +
+    ' client_port INTEGER NOT NULL );';
+
+  SQLiteQuery.Execute();
+
+  SQLiteQuery.SQL.Text := 'CREATE TABLE IF NOT EXISTS TELEGRAMUSER (' +
+    'ID          INTEGER PRIMARY KEY AUTOINCREMENT ' + 'UNIQUE ' + 'NOT NULL, '
+    + ' telegram_username TEXT,' + '  telegram_userid   TEXT    NOT NULL );';
+
+  SQLiteQuery.Execute();
+
+    SQLiteQuery.SQL.Text := 'CREATE TABLE IF NOT EXISTS EVENTS (' +
+    'ID          INTEGER PRIMARY KEY AUTOINCREMENT ' + 'UNIQUE ' + 'NOT NULL, '
+    + ' EVENT TEXT,' + '  IP   TEXT, PASS  TEXT,'
+    +' LOG  TEXT, PORT TEXT, EVENT_TYPE INTEGER,'+
+    ' MESS TEXT,SEND_TELEGRAM BOOLEAN, SEND_SMS BOOLEAN, SEND_EMAIL BOOLEAN);';
+
+  SQLiteQuery.Execute();
+
+
+    SQLiteQuery.SQL.Text := 'CREATE TABLE IF NOT EXISTS CUSTOMER_ONOFF (' +
+    'ID          INTEGER PRIMARY KEY AUTOINCREMENT ' + 'UNIQUE ' + 'NOT NULL, '
+    + ' CUSTOMER_ID INTEGER,' + '  FIO   TEXT  , ADRESS TEXT ' +
+    ' IP TEXT, PORT INTEGER , STATUS INTEGER, ON_OFF INTEGER,DATE_CREATE TEXT,DATE_MODIFIED TEXT );';
+
+  SQLiteQuery.Execute();
+
+
+
+  SQLiteConnection.Close;
+end;
+
+// Получить список клиентов из внутреннеи базы
+Function TPinguinServerForm.GetClient(): TLIST;
+var
+  res: TLIST;
+  cl: TClient;
+  rcl_ip: String;
+  rcl_id: Integer;
+  rcl_name: String;
+  rcl_port: Integer;
+begin
+  res := TLIST.Create;
+  SQLiteConnection.Connected := true;
+  SQLiteQuery.SQL.Text := 'SELECT * FROM CLIENTS;';
+  // SQLiteQuery.Open('SELECT * FROM CLIENTS;');
+  SQLiteQuery.Active := true;
+  while not SQLiteQuery.Eof do
+  begin
+    rcl_ip := SQLiteQuery.FieldByName('client_ip').AsString;
+    rcl_id := SQLiteQuery.FieldByName('ID').AsInteger;
+    rcl_name := SQLiteQuery.FieldByName('client_name').AsString;
+    rcl_port := SQLiteQuery.FieldByName('client_port').AsInteger;
+    cl := TClient.Create(rcl_id, rcl_ip, rcl_name, rcl_port);
+    res.Add(cl);
+    SQLiteQuery.Next;
+  end;
+  result := res;
+end;
+
+// Получить список клиентов из внутреннеи базы
+Function TPinguinServerForm.GetCondition(): TLIST;
+var
+  res: TLIST;
+  Cond: TConditions;
+  cond_text: String;
+  send_sms: Boolean;
+  send_email: Boolean;
+  send_telegram: Boolean;
+  MESS: String;
+begin
+  res := TLIST.Create;
+  SQLiteConnection.Connected := true;
+  SQLiteQuery.SQL.Text := 'SELECT * FROM CONDITIONS;';
+  // SQLiteQuery.Open('SELECT * FROM CLIENTS;');
+  SQLiteQuery.Active := true;
+  while not SQLiteQuery.Eof do
+  begin
+    cond_text := SQLiteQuery.FieldByName('COND_TEXT').AsString;
+    send_sms := SQLiteQuery.FieldByName('SEND_SMS').AsBoolean;
+    send_email := SQLiteQuery.FieldByName('SEND_EMAIL').AsBoolean;
+    send_telegram := SQLiteQuery.FieldByName('SEND_TELEGRAM').AsBoolean;
+    MESS := SQLiteQuery.FieldByName('MESS').AsString;
+
+    Cond := TConditions.Create(cond_text, MESS, send_telegram, send_email,
+      send_sms);
+    res.Add(Cond);
+    SQLiteQuery.Next;
+  end;
+  result := res;
+end;
+
+// запись новые условия отправки сообщении
+Procedure TPinguinServerForm.SetNewCondition(Cond: String; MESS: String;
+  sms, email, telegram: Boolean);
+begin
+
+  SQLiteConnection.Connected := true;
+  SQLiteQuery.SQL.Text :=
+    'INSERT INTO CONDITIONS(COND_TEXT,SEND_SMS,SEND_TELEGRAM,SEND_EMAIL,MESS)' +
+    'VALUES(' + QuotedStr(Cond) + ',' + BoolToStr(sms) + ',' +
+    BoolToStr(telegram) + ',' + BoolToStr(email) + ',' + QuotedStr(MESS) + ');';
+  // SQLiteQuery.Open('SELECT * FROM CLIENTS;');
+  SQLiteQuery.ExecSQL;
+
+end;
+
+
+// запись новые условия отправки сообщении
+Procedure TPinguinServerForm.SetNewCustomerONOFF(CustIP:TCustomerIP);
+begin
+
+  {SQLiteConnection.Connected := true;
+  SQLiteQuery.SQL.Text :=
+    'INSERT INTO CUSTOMER_ONOFF(CUSTOMER_ID,FIO,ADRESS,IP,PORT,STATUS,ON_OFF,DATE_CREATE,DATE_MODIFIED)' +
+    'VALUES(' + QuotedStr(Cond) + ',' + BoolToStr(sms) + ',' +
+    BoolToStr(telegram) + ',' + BoolToStr(email) + ',' + QuotedStr(MESS) + ');';
+  // SQLiteQuery.Open('SELECT * FROM CLIENTS;');
+  SQLiteQuery.ExecSQL; }
+
+
+  {  SQLiteQuery.SQL.Text := 'CREATE TABLE IF NOT EXISTS CUSTOMER_ONOFF (' +
+    'ID          INTEGER PRIMARY KEY AUTOINCREMENT ' + 'UNIQUE ' + 'NOT NULL, '
+    + ' CUSTOMER_ID INTEGER,' + '  FIO   TEXT  , ADRESS TEXT ' +
+    ' IP TEXT, PORT INTEGER , STATUS INTEGER, ON_OFF INTEGER,DATE_CREATE TEXT,DATE_MODIFIED TEXT );';}
+
+end;
+
+
+// Получить список клиентов из внутреннеи базы
+Procedure TPinguinServerForm.SetNewEvents(event:String;ip:String;password:String;login:String;port:String;event_id:Integer;mess:String;send_sms,send_telegram,send_email:Boolean);
+begin
+
+  SQLiteConnection.Connected := true;
+  SQLiteQuery.SQL.Text :=
+    'INSERT INTO EVENTS(EVENT,IP,PASS,LOG,PORT,EVENT_TYPE,MESS,SEND_SMS,SEND_TELEGRAM,SEND_EMAIL)' +
+    'VALUES(' + QuotedStr(event) + ',' +
+    QuotedStr(ip)+','+
+    QuotedStr(password)+','+
+    QuotedStr(login)+','+
+    QuotedStr(port)+','+
+    IntToStr(event_id)+','+
+    QuotedStr(mess)+','+
+    BoolToStr(send_sms)+','+
+    BoolToStr(send_telegram)+','+
+    BoolToStr(send_email)+
+    ');';
+    SQLiteQuery.ExecSQL;
+
+end;
+
+// Получить список событии из бд
+Function TPinguinServerForm.GetEvents(): TLIST;
+var
+  res: TLIST;
+  events: TEvents;
+  event: String;
+  ip: String;
+  pass : String;
+  log : String;
+  port : String;
+  event_type : Integer;
+  mess : String;
+  send_sms,
+  send_telegram,
+  send_email : Boolean;
+begin
+  res := TLIST.Create;
+  SQLiteConnection.Connected := true;
+  SQLiteQuery.SQL.Text := 'SELECT * FROM EVENTS;';
+  // SQLiteQuery.Open('SELECT * FROM CLIENTS;');
+  SQLiteQuery.Active := true;
+  while not SQLiteQuery.Eof do
+  begin
+    event := SQLiteQuery.FieldByName('EVENT').AsString;
+    ip := SQLiteQuery.FieldByName('IP').AsString;
+    pass := SQLiteQuery.FieldByName('PASS').AsString;
+    log := SQLiteQuery.FieldByName('LOG').AsString;
+    port := SQLiteQuery.FieldByName('PORT').AsString;
+    event_type := SQLiteQuery.FieldByName('EVENT_TYPE').AsInteger;
+
+    mess := SQLiteQuery.FieldByName('MESS').AsString;
+    send_sms := SQLiteQuery.FieldByName('SEND_SMS').AsBoolean;
+    send_telegram := SQLiteQuery.FieldByName('SEND_TELEGRAM').AsBoolean;
+    send_email := SQLiteQuery.FieldByName('SEND_EMAIL').AsBoolean;
+
+    events := TEvents.Create(event, log, pass, port, ip, event_type, mess, send_sms,send_telegram,send_email);
+    res.Add(events);
+    SQLiteQuery.Next;
+  end;
+  result := res;
+end;
+
+
+Procedure TPinguinServerForm.DeleteEvents(Event: String);
+begin
+
+  SQLiteConnection.Connected := true;
+  SQLiteQuery.SQL.Text := 'DELETE FROM EVENTS WHERE EVENT=' +
+    QuotedStr(Event) + ';';
+  SQLiteQuery.ExecSQL;
+
+end;
+
+
+Procedure TPinguinServerForm.DeleteCondition(Cond: String);
+begin
+
+  SQLiteConnection.Connected := true;
+  SQLiteQuery.SQL.Text := 'DELETE FROM CONDITIONS WHERE COND_TEXT=' +
+    QuotedStr(Cond) + ';';
+  // SQLiteQuery.Open('SELECT * FROM CLIENTS;');
+  SQLiteQuery.ExecSQL;
+
+end;
+
+// Получить список пользователеи подписанных из телеграмма
+Function TPinguinServerForm.GetTelegramUser(): TLIST;
+var
+  res: TLIST;
+  tu: TTelegramUser;
+  teleg_id, teleg_name: String;
+begin
+  res := TLIST.Create;
+  SQLiteConnection.Connected := true;
+  SQLiteQuery.SQL.Text := 'SELECT * FROM TELEGRAMUSER;';
+  // SQLiteQuery.Open('SELECT * FROM CLIENTS;');
+  SQLiteQuery.Active := true;
+  while not SQLiteQuery.Eof do
+  begin
+    teleg_name := SQLiteQuery.FieldByName('telegram_username').AsString;
+    teleg_id := SQLiteQuery.FieldByName('telegram_userid').AsString;
+    tu := TTelegramUser.Create(teleg_name, teleg_id);
+    res.Add(tu);
+    SQLiteQuery.Next;
+  end;
+  result := res;
+end;
+
+procedure TPinguinServerForm.GPON2Click(Sender: TObject);
+var LIST_GPON : TLIST;
+begin
+LIST_GPON := TList.Create;
+LIST_GPON := GetGPON_Client(false);
+StartONOFF_GPON(true,LIST_GPON);
+end;
+
+procedure TPinguinServerForm.GPON3Click(Sender: TObject);
+var LIST_GPON : TLIST;  i : integer;
+begin
+LIST_GPON := TList.Create;
+LIST_GPON := GetGPON_Client(true);
+StartONOFF_GPON(false,LIST_GPON);
+
+end;
+
+Procedure TPinguinServerForm.UpdateListFromTime(time_update: Byte);
+begin
+
+  case (time_update) of
+    0:
+      begin
+        if (Conf.base_or_file) then
+        begin
+          IP_LIST := getIPList();
+        end
+        else
+        begin
+          if (FileExists(ExtractFilePath(ParamStr(0)) + 'proxy.txt')) then
+          begin
+            IP_LIST := getIPListFromFile(ExtractFilePath(ParamStr(0)) +
+              'proxy.txt');
+          end;
+
+          StartPing;
+        end;
+      end;
+  end;
+
+end;
+
+Procedure TPinguinServerForm.OnMinimizeProc(Sender: TObject);
+Begin
+  PostMessage(Handle, WM_SYSCOMMAND, SC_MINIMIZE, 0);
+  ShowWindow(Handle, SW_HIDE);
+End;
+
+procedure TPinguinServerForm.ONOFF1Click(Sender: TObject);
+var i , j : Integer;
+begin
+try
+if(ON_LIST.Count>0)
+then begin
+  for I := 0 to ON_LIST.Count-1 do
+  begin
+    TThread(ON_LIST[i]).Suspend;
+    TThread(ON_LIST[i]).Terminate;
+  end;
+  ON_LIST.Clear;
+end;
+
+if(OFF_LIST.Count>0)
+then begin
+  for I := 0 to OFF_LIST.Count-1 do
+  begin
+    TThread(OFF_LIST[i]).Suspend;
+    TThread(OFF_LIST[i]).Terminate;
+  end;
+  OFF_LIST.Clear;
+end;
+  except on e : exception do begin end;
+
+
+end;
+
+end;
+
+function TPinguinServerForm.DeleteTelegramUser(user_id: String): Boolean;
+begin
+  SQLiteConnection.Connected := true;
+  SQLiteQuery.SQL.Text := 'DELETE FROM TELEGRAMUSER WHERE telegram_userid=' +
+    QuotedStr(user_id);
+  SQLiteQuery.ExecSQL;
+  result := true;
+  SQLiteConnection.Close;
+
+  TelegramUsers.clear;
+  TelegramUsers := GetTelegramUser;
+
+end;
+
+function TPinguinServerForm.SetAddTelegramUser(user_name,
+  user_id: String): Integer;
+var
+  prev_port: Integer;
+  prev_key: String;
+  id_client: Integer;
+begin
+  SQLiteConnection.Connected := true;
+  SQLiteQuery.SQL.Text := 'SELECT ID FROM TELEGRAMUSER WHERE telegram_userid=' +
+    QuotedStr(user_id);
+  SQLiteQuery.Open();
+
+  if (SQLiteQuery.RecordCount = 0) then
+  begin
+    SQLiteQuery.SQL.Text :=
+      'INSERT INTO TELEGRAMUSER(telegram_username,telegram_userid)VALUES(' +
+      QuotedStr(user_name) + ',' + QuotedStr(user_id) + ')';
+    SQLiteQuery.ExecSQL;
+
+    SQLiteQuery.SQL.Text := 'SELECT ID FROM TELEGRAMUSER WHERE telegram_userid='
+      + QuotedStr(user_id);
+    SQLiteQuery.Open();
+    if (SQLiteQuery.RecordCount > 0) then
+    begin
+      id_client := SQLiteQuery.FieldByName('ID').AsInteger;
+    end;
+
+  end;
+  SQLiteConnection.Close;
+  result := id_client;
+  TelegramUsers.clear;
+  TelegramUsers := GetTelegramUser;
+end;
+
+function TPinguinServerForm.SetAddClient(client_ip: String; client_name: String;
+  client_port: Integer): Integer;
+var
+  prev_port: Integer;
+  prev_key: String;
+  id_client: Integer;
+begin
+  SQLiteConnection.Connected := true;
+  SQLiteQuery.SQL.Text := 'SELECT ID,client_port FROM CLIENTS WHERE client_ip='
+    + QuotedStr(client_ip);
+  SQLiteQuery.Open();
+
+  if (SQLiteQuery.RecordCount > 0) then
+  begin
+    id_client := SQLiteQuery.FieldByName('ID').AsInteger;
+    // prev_key := SQLiteQuery.FieldByName('')
+    prev_port := SQLiteQuery.FieldByName('client_port').AsInteger;
+
+    if (prev_port <> client_port) then
+    begin
+      SQLiteQuery.SQL.Text := 'UPDATE CLIENTS SET client_port=' +
+        IntToStr(client_port) + ' WHERE ID=' + IntToStr(id_client);
+      SQLiteQuery.ExecSQL;
+    end;
+
+  end
+  else
+  begin
+    SQLiteQuery.SQL.Text :=
+      'INSERT INTO CLIENTS(client_name,client_ip,client_port)VALUES(' +
+      QuotedStr(client_name) + ',' + QuotedStr(client_ip) + ',' +
+      IntToStr(client_port) + ')';
+    SQLiteQuery.ExecSQL;
+
+    SQLiteQuery.SQL.Text :=
+      'SELECT ID,client_port FROM CLIENTS WHERE client_ip=' +
+      QuotedStr(client_ip);
+    SQLiteQuery.Open();
+    if (SQLiteQuery.RecordCount > 0) then
+    begin
+      id_client := SQLiteQuery.FieldByName('ID').AsInteger;
+    end;
+
+  end;
+  SQLiteConnection.Close;
+  result := id_client;
+end;
+
+procedure TPinguinServerForm.IP1Click(Sender: TObject);
+begin
+  IPadressForm := TIPadressForm.Create(nil);
+  IPadressForm.show;
+end;
+
+procedure TPinguinServerForm.DeleteARow(Grid: TStringGrid; ARow: Integer);
+begin
+  TMyGrid(Grid).DeleteRow(ARow);
+end;
+
+function Explode(S: String; Delimiter: Char; Index: Integer): String; overload;
+var
+  SList: TStrings;
+  iCount: Integer;
+begin
+  result := '';
+  if (length(S) = 0) then
+    Exit;
+  SList := TStringList.Create;
+  SList.Delimiter := Delimiter;
+  SList.DelimitedText := S;
+  if (Index <= SList.Count) and (Index > 0) then
+    result := SList.Strings[Index - 1]
+  else
+    result := '';
+  SList.Free;
+end;
+
+constructor TSwitch.Create(z_ip: String; z_port: Integer; z_status: String;
+  z_adress: String);
+begin
+  IP := z_ip;
+  port := z_port;
+  status := z_status;
+  ping := 0;
+  enable := true;
+  adress := z_adress;
+  last_avb := 'not improved';
+end;
+
+constructor TCustomer.Create(z_fio: String; z_phone: String; z_vip_s: Boolean);
+begin
+  customer_fio := z_fio;
+  phone_number := z_phone;
+  vip_status := z_vip_s;
+end;
+
+// запуск Потоков для пинга аипи адресов
+Procedure TPinguinServerForm.StartPing;
+var
+  T: TTask;
+  count_task, i, prev: Integer;
+  task_to_thread: Integer;
+begin
+  task_to_thread := Conf.count_task;
+  StatusBar1.Panels[0].Text := 'Запуск : ' + DateTimeToStr(Now);
+  StatusBar1.Panels[1].Text := 'Задач - ' + IntToStr(IP_LIST.Count);
+  count_task := IP_LIST.Count div task_to_thread;
+  if ((IP_LIST.Count mod task_to_thread) <> 0) then
+    count_task := count_task + 1;
+  // Создадим столько потоков сколько нужно
+  for i := 1 to count_task do
+  begin
+
+    T := TTask.Create(false);
+    T.Priority := tpLowest;
+    T.FreeOnTerminate := true;
+    T.switch_list := IP_LIST; // спиоск оборудования которое будет пинговаться
+    T.tclient_list := Client_List; // клиенты которые будут получать сообщения
+    if ((i = count_task) and ((IP_LIST.Count mod task_to_thread) <> 0)) then
+    begin
+      T.lst_start := ((i - 1) * task_to_thread) + 1;
+      T.lst_end := ((i - 1) * task_to_thread) +
+        ((IP_LIST.Count) mod task_to_thread);
+    end
+    else
+    begin
+      T.lst_start := ((i - 1) * task_to_thread) + 1;
+      // Какие аипи адреса обработать начало
+      T.lst_end := (i * task_to_thread); // Какие аипи адреса обработать конец
+    end;
+    T.request_timeout := Conf.timeout; // время ответа от каждого адреса
+    T.restart_task := Conf.restart_task; // перезапускать ли задачи
+    T.task_pos := addTaskGrid('PING TASK ' + '#' + IntToStr(i),
+      IntToStr(T.lst_start) + ' из ' + IntToStr(T.lst_end), 'STARTED');
+    T.Resume;
+    Task_List.Add(T);
+  end;
+end;
+
+procedure TPinguinServerForm.TimerWaitStartTimer(Sender: TObject);
+var
+  List_IP: TLIST;
+begin
+try
+  List_IP := GetCustomerIP(1, '',0);
+  if (List_IP.Count > 0) then
+  begin
+    TimerWaitStart.Enabled := false;
+    StartONOFF(1, List_IP);
+  end
+  else
+    TimerWaitStart.Enabled := true;
+   except on e:EXCEPTION do begin  TimerWaitStart.Enabled := true; DeleteARow(GridTaskList,MonTaskPos); end; end;
+end;
+
+procedure TPinguinServerForm.TrayIcon1DblClick(Sender: TObject);
+begin
+  ShowWindow(Handle, SW_SHOW);
+
+end;
+
+Procedure Delay(mSec:Cardinal);
+    Var
+      TargetTime:Cardinal;
+    Begin
+      TargetTime:=GetTickCount+mSec;
+      While TargetTime>GetTickCount Do
+        begin
+            Application.ProcessMessages;
+            Sleep(1);
+            If Application.Terminated then Exit;
+        end;
+    End;
+
+ procedure TPinguinServerForm.SetHuawei_ON_OFF(ip:String;port:String;password:String;on_off:Boolean);
+ var onoff_str : String;
+ begin
+ try
+  IdTelnet1.Host:= ip;
+  IdTelnet1.Port:= 23;
+  IdTelnet1.Connect;
+  Application.ProcessMessages;
+{ BeginThread()  }
+
+  if(on_off) then onoff_str := 'undo shutdown' else onoff_str:= 'shutdown';
+
+ if(IdTelnet1.Connected) then
+ begin
+   IdTelnet1.SendString(password + #13);
+    if(WaitFor('>')) then
+      begin
+   IdTelnet1.SendString('system-view' + #13);
+     if(WaitFor(']')) then
+                      begin
+   IdTelnet1.SendString(port + #13);
+     if(WaitFor(']')) then
+                   begin
+   IdTelnet1.SendString(onoff_str + #13);
+     if(WaitFor(']')) then
+              begin
+   IdTelnet1.SendString('return' + #13);
+     if(WaitFor(']')) then
+        begin
+   IdTelnet1.SendString('quit' + #13);
+        end;
+               end;
+                   end;
+                        end;
+      end;
+      IdTelnet1.Disconnect;
+ end;
+  except on e: exception do begin LogFile('ошибка'+e.Message,0);IdTelnet1.Disconnect; end;
+    end;
+   end;
+
+
+ procedure TPinguinServerForm.SetDLink_ON_OFF(ip:String;port:String;login,password:String;on_off:Boolean);
+ var onoff_str : String;
+ begin
+ try
+  IdTelnet1.Host:= ip;
+  IdTelnet1.Port:= 23;
+  IdTelnet1.Connect;
+
+  if(on_off) then onoff_str := 'enable' else onoff_str:= 'disable';
+
+ if(IdTelnet1.Connected) then
+ begin
+   if (WaitFor('username')) then
+      begin
+    IdTelnet1.SendString('netadmin' + #13);
+   if (WaitFor('password')) then
+                      begin
+   IdTelnet1.SendString('netadmin' + #13);
+   if (WaitFor('#')) then
+                   begin
+   IdTelnet1.SendString('config ports ' + port + ' state ' + onoff_str + #13);
+     if ((WaitFor('success')) or (WaitFor('#'))) then
+              begin
+    IdTelnet1.SendString('save' + #13);
+      if (WaitFor('#')) then
+                begin
+                  IdTelnet1.SendString('logout' + #13);
+                  IdTelnet1.Disconnect;
+        end; //#
+               end; //success or #
+                   end;//#
+                        end; //password
+      end;//username
+ end;// telnet connected
+
+ except on e:EXCEPTION do begin LogFile('DLINK ONOFF error '+e.Message,1); end;
+
+
+ end;
+
+ end;
+
+
+// Сигнал о том что потоки вкл/откл отработали
+Procedure TPinguinServerForm.EndedOnOffTask(ON_OFF: byte; IP_LIST: TLIST);
+var
+  s_onoff: String;
+  List_IP: TLIST;
+  i: Integer;
+
+  CUSTOMER_ID: Integer;
+  IP: STRING;
+  FIO: STRING;
+  adress: STRING;
+  port: Integer;
+  status: Byte;
+begin
+try
+  if (ON_OFF in [1,3]) then
+    s_onoff := 'вкл'
+  else
+    s_onoff := 'откл';
+  Log('Потоки ' + s_onoff + ' завершили свою работу', false);
+  LogFile('Потоки ' + s_onoff + ' завершили свою работу', 1);
+  EndedTaskTimer.Enabled := false;
+  // Сохранить список всех выполненных отк/вкл портов GLOBAL_SUCCESS_IP
+  SaveBaseSUCCESS_IP();
+
+  // перезапуска задачи на вкл портов
+  if (ON_OFF in [1,3]) then
+    if (RESTARTED_TASK_ON) then
+    begin
+      // запросим список абонентов оплативших и у которых надо вкл порт
+      List_IP := GetCustomerIP(1, '',0);
+      if (List_IP.Count > 0) then
+      begin
+        LogFile('Перезапуск Задачи ' + s_onoff + ' портов  доступно задач - ' +
+          IntToStr(List_IP.Count), 1);
+        TimerWaitStart.Enabled := false;
+        StartONOFF(1, List_IP);
+      end
+      else
+        TimerWaitStart.Enabled := true;
+
+    end;
+  // *************
+
+  // перезапуска задачи на откл портов
+  if (ON_OFF in [0,2]) then
+    if (RESTARTED_TASK_OFF) then
+    begin
+
+    end;
+  // *************
+  except on E:exception do begin   if (ON_OFF in [1,3]) then
+    if (RESTARTED_TASK_ON) then TimerWaitStart.Enabled := true; LogFile('error '+e.Message,1);  end;
+end;
+
+end;
+
+procedure TPinguinServerForm.EndedTaskTimerTimer(Sender: TObject);
+begin
+
+  Log('ON_LIST ' + IntToStr(ON_LIST.Count), false);
+  if (ON_LIST.Count = 0) then
+  begin { }
+   // EndedOnOffTask(true, IP_LIST);
+  end;
+
+  if (OFF_LIST.Count = 0) then
+  begin { }
+    // EndedOnOffTask(True,IP_LIST);
+  end;
+end;
+
+
+
+Procedure TPinguinServerForm.StartEventONOFF(EVENT:TEVENTS);
+ var T: TEventsONOFF;
+begin
+{************}
+    T := TEventsONOFF.Create(false);
+    T.Priority := tpLowest;
+    T.Event := EVENT;
+    T.FreeOnTerminate := true;
+    T.Resume;
+
+end;
+
+
+ { Поток для вкл/откл gpon оборудования}
+constructor TEventsONOFF.Create(Asyspended: Boolean);
+begin
+  FreeOnTerminate := true;
+  inherited Create(Asyspended);
+end;
+
+destructor TEventsONOFF.Destroy;
+begin
+  // ***
+
+end;
+
+procedure TEventsONOFF.Execute;
+var
+  telnet: TIdTelnet;
+  login_error: Boolean;
+  state: String;
+  cur_ip: String;
+  telnet_error: String;
+  onoff_str : String;
+  port , send_message : String;
+
+ begin
+
+    try
+
+
+  telnet := TIdTelnet.Create(nil);
+  telnet.OnDataAvailable := TelnetDataAvalable;
+
+  login_error := false;
+  // выполняем задачу пока не поступит сигнал завершения
+ // while not Terminated do
+  begin
+  //  EnterCriticalSection(TelnetCritSect);
+
+
+case Event.event_type of
+0 : begin
+     send_message:= 'Выключил порт на Huawei '+Event.ip+' порт '+Event.port;
+    end;
+
+1 : begin
+     send_message:= 'включил порт на Huawei '+Event.ip+' порт '+Event.port;
+    end;
+
+2 : begin
+     send_message:= 'выключил порт на Dlink '+Event.ip+':'+Event.port;
+    end;
+
+3 : begin
+     send_message:= 'включил порт на Dlink '+Event.ip+':'+Event.port;
+    end;
+
+
+end;
+
+       port := Event.port;
+       cur_ip := Event.ip;
+
+
+      telnet.Host := cur_ip;
+      telnet.port := 23;
+      telnet.Connect;
+
+      telnet_error := '';
+
+      if (telnet.Connected) then
+      begin
+
+       PinguinServerForm.LogFile('Подключился к '+telnet.Host+' порт '+port,8);
+
+
+     if (Event.event_type in [2,3]) then
+       begin
+       if(Event.event_type=3) then onoff_str := 'enable' else onoff_str:= 'disable';
+
+           if (WaitFor('username')) then
+      begin
+    telnet.SendString('netadmin' + #13);
+   if (WaitFor('password')) then
+                      begin
+   telnet.SendString('netadmin' + #13);
+   if (WaitFor('#')) then
+                   begin
+   telnet.SendString('config ports ' + port + ' state ' + onoff_str + #13);
+     if ((WaitFor('success')) or (WaitFor('#'))) then
+              begin
+    telnet.SendString('save' + #13);
+      if (WaitFor('#')) then
+                begin
+                  telnet.SendString('logout' + #13);
+                  telnet.Disconnect;
+        end; //#
+               end; //success or #
+                   end;//#
+                        end; //password
+      end;//username
+
+
+        end // event type dlink on off
+        else if (Event.event_type in [0,1]) then
+        begin
+           if(Event.event_type=1) then onoff_str := 'undo shutdown' else onoff_str:= 'shutdown';
+
+
+          telnet.SendString(Event.password + #13);
+    if(WaitFor('>')) then
+      begin
+   telnet.SendString('system-view' + #13);
+     if(WaitFor(']')) then
+                      begin
+   telnet.SendString(port + #13);
+     if(WaitFor(']')) then
+                   begin
+   telnet.SendString(onoff_str + #13);
+     if(WaitFor(']')) then
+              begin
+   telnet.SendString('return' + #13);
+     if(WaitFor(']')) then
+        begin
+   telnet.SendString('quit' + #13);
+        end;
+               end;
+                   end;
+                        end;
+
+        end;
+
+
+
+      end;
+
+
+       end; // disconnected telnet
+
+     telnet.Disconnect;
+       status_str := send_message;
+        Synchronize(SetStatus);
+       // telnet.FreeOnRelease;
+            end;
+
+
+    except
+      on E: EXCEPTION do
+      begin
+
+        status_str := 'НЕУСПЕШНО : '+send_message + ' - ERROR '+e.Message;
+        Synchronize(SetStatus);
+        telnet.FreeOnRelease;
+
+      end;
+
+    end;
+
+
+
+
+  //  LeaveCriticalSection(TelnetCritSect);
+
+
+end;
+
+
+  Procedure TEVENTSONOFF.SetStatus();
+begin
+  /// **
+  try
+    Application.ProcessMessages;
+    PinguinServerForm.Log(status_str,false);
+     PinguinServerForm.LogFile(status_str,2);
+
+    PinguinServerForm.LogFile('записываю статус '+status_str+' ip по событию '+Event.ip,8);
+
+if(Event.send_sms) then begin PinguinServerForm.sms.send_sms(PinguinServerForm.Conf.smsc_phone, TranslitRus2Lat(status_str));  end;
+
+if(Event.send_telegram) then begin PinguinServerForm.SendAllTelegram(ObjectBot, TranslitRus2Lat(status_str), '', Event.ip);  end;
+
+
+
+  except
+    on E: EXCEPTION do
+    begin
+     PinguinServerForm.Log(status_str+' - ERROR '+e.Message,false);
+     PinguinServerForm.LogFile(status_str+' - ERROR '+e.Message,2);
+    end;
+
+  end;
+end;
+
+
+
+Procedure TPinguinServerForm.StartONOFF_GPON(ON_OFF: Boolean; GPON_CLIENT: TLIST);
+ var T: TONOFF_GPON;
+begin
+{************}
+    T := TONOFF_GPON.Create(false);
+    T.Priority := tpLowest;
+    T.FreeOnTerminate := true;
+    T.ON_OFF := ON_OFF;
+    T.LIST_CLIENT := GPON_CLIENT;
+    T.task_pos := addTaskGrid('ONOFF_GPON','ACTIVE','0 из '+IntToStr(GPON_CLIENT.Count));
+    T.Resume;
+
+end;
+
+
+ { Поток для вкл/откл gpon оборудования}
+constructor TONOFF_GPON.Create(Asyspended: Boolean);
+begin
+  FreeOnTerminate := true;
+  inherited Create(Asyspended);
+end;
+
+destructor TONOFF_GPON.Destroy;
+begin
+  // ***
+
+end;
+
+procedure TONOFF_GPON.Execute;
+var
+  telnet: TIdTelnet;
+  login_error: Boolean;
+  cur_port: Integer;
+  state: String;
+  cur_ip: String;
+  telnet_error: String;
+
+  GPON_CLIENT : TGPON_CLIENT;
+
+  st_pos , en_pos : Integer;
+  Epon_Port : String;
+
+  tv_inet_all : byte;
+  mac : String;
+begin
+
+  if (ON_OFF) then
+    state := 'enable'
+  else
+    state := 'disable';
+
+  status_task := 'ACTIVE';
+  telnet := TIdTelnet.Create(nil);
+  telnet.OnDataAvailable := TelnetDataAvalable;
+  CUR_POS := 0;
+  login_error := false;
+  // выполняем задачу пока не поступит сигнал завершения
+  while not Terminated do
+  begin
+  //  EnterCriticalSection(TelnetCritSect);
+    try
+      GPON_CLIENT := TGPON_CLIENT(LIST_CLIENT[CUR_POS]);
+      cur_ip := GPON_CLIENT.IP;
+      tv_inet_all := GPON_CLIENT.tv_inet_all;
+      mac := GPON_CLIENT.MAC;
+
+      telnet.Host := cur_ip;
+      telnet.port := 23;
+      telnet.Connect;
+
+      telnet_error := '';
+
+      if (telnet.Connected) then
+      begin
+
+        // Telnet.GetResponse([220])
+        if (WaitFor('username')) then
+        begin // login
+          telnet.SendString('netadmin' + #13);
+          if (WaitFor('password')) then
+          begin // login after
+            telnet.SendString('netadmin' + #13);
+            if (WaitFor('>')) then
+            begin // password after
+              telnet.SendString('enable' + #13);
+              if (WaitFor('#')) then
+              begin
+                telnet.SendString('config' + #13);
+                if (WaitFor('#')) then
+                begin
+                // Команда получения номера порта по мак адресу
+                  telnet.SendString('show epon onu-information mac-address '+mac + #13);
+                if (WaitFor(':')) then
+                begin
+                if (WaitFor('#')) then
+                // начинаем поиск в наиденом списке номера порта
+          begin
+          // тут нужно разедить команды разных моделей между собой
+          en_pos :=  Pos('xPON',response_result);
+        if(en_pos=0) then
+        en_pos := Pos('SNR',response_result);
+
+        st_pos  := Pos('EPON0',response_result,(en_pos-15));
+        // если порт наиден
+         if((st_pos>0)and(en_pos>0)) then
+         begin
+          Epon_Port:= Trim(Copy(response_result,st_pos,(en_pos-st_pos)));
+
+          telnet.SendString('interface '+Epon_Port + #13);
+            if (WaitFor('#')) then
+            begin
+
+            // если тв то работает с тв командами
+             if(tv_inet_all=1) then
+             begin
+              // включаем тв
+             if(ON_OFF)then telnet.SendString('epon onu catv enable' + #13)
+             // отключаем тв
+             else telnet.SendString('epon onu catv disable' + #13);
+
+             end
+             // работаем с командами интернет
+             else if(tv_inet_all=2) then
+             begin
+             if(ON_OFF) then  telnet.SendString('no epon onu port 1 ctc shutdown' + #13)
+                else  telnet.SendString('epon onu port 1 ctc shutdown' + #13);
+             end
+             // откл/вкл всё
+             else if(tv_inet_all=3) then
+             begin
+
+              if(ON_OFF)then
+               begin
+               // вкл тв
+               telnet.SendString('epon onu catv enable' + #13);
+               // если команда успешно отключилась
+               if (WaitFor('#')) then
+            begin //1*
+            // вкл интернет
+              telnet.SendString('no epon onu port 1 ctc shutdown' + #13);
+            end;  //1*
+
+
+               end // onoff
+               else  // onoff else
+               begin //2*
+               // откл тв
+               telnet.SendString('epon onu catv disable' + #13);
+                 if (WaitFor('#')) then
+            begin
+            // отключаем интернет
+              telnet.SendString('epon onu port 1 ctc shutdown' + #13);
+            end;
+               end;// onoff else 2*
+
+             end;// tv_inet_all=3
+
+
+
+            end// inteface error
+            else
+              begin
+           telnet.Disconnect;
+           telnet_error := 'command #inteface error ' + response_result;
+         end;
+
+
+         end
+         else
+         begin
+           telnet.Disconnect;
+           telnet_error := 'command #not find epon_port - error ' + response_result;
+         end;
+
+          end;
+
+
+
+                end
+                else
+              begin
+                telnet.Disconnect;
+                telnet_error := 'command #show epon onu-information - error ' + response_result;
+              end; // enable error
+
+                end
+                else
+                begin
+                  telnet.Disconnect;
+                  telnet_error := 'command #config - error ' + response_result;
+                end; // config error
+              end
+              else
+              begin
+                telnet.Disconnect;
+                telnet_error := 'command #enable - error ' + response_result;
+              end; // enable error
+            end
+            else
+            begin
+              telnet.Disconnect;
+              telnet_error := 'command #passw - error ' + response_result;
+            end; // password error
+          end
+          else
+          begin
+            telnet.Disconnect;
+            telnet_error := 'command #login - error ' + response_result;
+          end; // login error
+        end
+        else
+        begin
+          telnet.Disconnect;
+          telnet_error := 'command #aut - error ' + response_result;
+        end; // aut error
+
+      end;
+
+     // if (telnet_error <> 'SUCCESS') then
+
+
+      status_str := GPON_CLIENT.ADRESS + ' ' + GPON_CLIENT.IP +
+        ' ' + cur_ip + ':' + IntToStr(cur_port) + ' STATUS:' +state+' '+ telnet_error;
+      Synchronize(SetStatus);
+      telnet.Disconnect;
+
+    except
+      on E: EXCEPTION do
+      begin
+
+        status_str := IntToStr(CUR_POS) + ' ' + cur_ip + 'error ' + E.Message;
+        Synchronize(SetStatus);
+        if (LIST_CLIENT.Count <= CUR_POS + 1) then
+        begin
+          telnet.FreeOnRelease;
+          status_task := 'END';
+          Synchronize(SetProgress);
+        end;
+
+      end;
+
+    end;
+
+    Synchronize(SetProgress);
+
+    if (LIST_CLIENT.Count <= CUR_POS + 1) then
+    begin
+
+      telnet.FreeOnRelease;
+      status_task := 'END';
+      Synchronize(SetProgress);
+    end;
+
+    inc(CUR_POS);
+    sleep(500);
+  //  LeaveCriticalSection(TelnetCritSect);
+  end;
+
+end;
+
+
+
+
+// запуск Потоков для пинга аипи адресов
+Procedure TPinguinServerForm.StartONOFF(ON_OFF: Byte; List_IP: TLIST);
+var
+  T: TSwithONOFF;
+  count_task, i, prev: Integer;
+  task_to_thread: Integer;
+  task_name : String;
+begin
+
+  {
+  ONOFF
+    0 -откл
+    1 - вкл
+    2 - понизитьт
+    3 - повысить
+
+    }
+
+  if (ON_OFF in [1,3]) then
+    ON_LIST.clear
+  else if (ON_OFF in[0,2]) then
+    OFF_LIST.clear;
+
+  GLOBAL_SUCCESS_IP.clear;
+
+  task_to_thread := 100; // Conf.count_task;
+
+  count_task := 0;
+
+  count_task := List_IP.Count div task_to_thread;
+  if ((IP_LIST.Count mod task_to_thread) <> 0) then
+    count_task := count_task + 1;
+  // Создадим столько потоков сколько нужно
+  for i := 1 to count_task do
+  begin
+
+    T := TSwithONOFF.Create(false);
+    T.list_pos := 0;
+    T.task_pos := 0;
+    T.Priority := tpLowest;
+    T.FreeOnTerminate := true;
+    T.ON_OFF := ON_OFF;
+    T.IP_LIST := List_IP; // спиоск оборудования которое будет пинговаться
+
+    if ((i = count_task) and ((List_IP.Count mod task_to_thread) <> 0)) then
+    begin
+      T.list_st := ((i - 1) * task_to_thread) + 1;
+      T.list_en := (List_IP.Count);
+    end
+    else
+    begin
+      T.list_st := ((i - 1) * task_to_thread) + 1;
+      // Какие аипи адреса обработать начало
+      T.list_en := (i * task_to_thread); // Какие аипи адреса обработать конец
+    end;
+
+
+     case (ON_OFF) of
+       0: task_name := 'OFFPORT TASK ';
+       1: task_name :=  'ONPORT TASK ';
+       2: task_name := 'DOWNSPEED TASK ';
+       3: task_name := 'UPSPEED TASK ';
+     end;
+
+
+    T.task_pos := addTaskGrid( task_name+ '#' + IntToStr(i),
+      IntToStr(T.list_st) + ' из ' + IntToStr(T.list_en), 'STARTED');
+
+    if (ON_OFF in[1,3]) then
+      ON_LIST.Add(T)
+    else if(ON_OFF in[0,2])then
+      OFF_LIST.Add(T);
+    if (ON_OFF in [1,3]) then
+      T.list_pos := (ON_LIST.Count - 1)
+    else if(ON_OFF in [0,2]) then
+      T.list_pos := (OFF_LIST.Count - 1);
+    T.thread := T;
+    T.Resume;
+
+  end;
+  EndedTaskTimer.Enabled:= TRUE;
+
+end;
+
+constructor TSwithONOFF.Create(Asyspended: Boolean);
+begin
+  InitializeCriticalSection(TelnetCritSect);
+  FreeOnTerminate := true;
+  inherited Create(Asyspended);
+end;
+
+destructor TSwithONOFF.Destroy;
+begin
+  // ***
+
+end;
+
+procedure TSwithONOFF.Execute;
+var
+  telnet: TIdTelnet;
+  login_error: Boolean;
+  cur_port: Integer;
+  state: String;
+  cur_ip: String;
+  telnet_error: String;
+   ext_info : String;
+  commandONOFF : String;
+
+begin
+
+
+
+
+  status_task := 'ACTIVE';
+  telnet := TIdTelnet.Create(nil);
+  telnet.OnDataAvailable := TelnetDataAvalable;
+  CUR_POS := list_st - 1;
+  login_error := false;
+  // выполняем задачу пока не поступит сигнал завершения
+  while not Terminated do
+  begin
+    EnterCriticalSection(TelnetCritSect);
+    try
+      CUR_CLIENT_IP := TCustomerIP(IP_LIST[CUR_POS]);
+      cur_ip := CUR_CLIENT_IP.IP;
+      cur_port := CUR_CLIENT_IP.port;
+
+      telnet.Host := cur_ip;
+      telnet.port := 23;
+      telnet.Connect;
+
+      telnet_error := '';
+
+      if (telnet.Connected) then
+      begin
+
+   case(ON_OFF) of
+   0 : begin commandONOFF := 'config ports ' + IntToStr(cur_port) + ' state disable';state := 'disable'; end;
+   1 : begin commandONOFF := 'config ports ' + IntToStr(cur_port) + ' state enable'; state := 'enable'; end;
+   2 : begin commandONOFF := 'config bandwidth_control ' + IntToStr(cur_port) + ' rx_rate no_limit tx_rate 512'; state := 'downspeed';  end;// понизили скорость
+   3 : begin commandONOFF := 'config bandwidth_control ' + IntToStr(cur_port) + ' rx_rate no_limit tx_rate no_limit'; state := 'upspeed'; end;// вернули скорость
+   end;
+
+        ext_info :=  CUR_CLIENT_IP.customer_fio+' '+CUR_CLIENT_IP.adress+' '+CUR_CLIENT_IP.IP+':'+IntToStr(CUR_CLIENT_IP.port);
+        // Telnet.GetResponse([220])
+        if (WaitFor('username')) then
+        begin // login
+          telnet.SendString('netadmin' + #13);
+          if (WaitFor('password')) then
+          begin // login after
+            telnet.SendString('netadmin' + #13);
+            if (WaitFor('#')) then
+            begin // password after
+
+
+               if(ON_OFF = 1)then
+               begin
+               telnet.SendString('config ports ' + IntToStr(cur_port) + ' state enable'+ #13);
+               telnet.SendString('config bandwidth_control ' + IntToStr(cur_port) + ' rx_rate no_limit tx_rate no_limit' + #13);
+               end
+               else
+               begin
+                  telnet.SendString(commandONOFF+ #13);
+               end;
+
+              if ((WaitFor('success')) or (WaitFor('#'))) then
+              begin
+                telnet.SendString('save' + #13);
+                if (WaitFor('#')) then
+                begin
+                  telnet.SendString('logout' + #13);
+                  telnet.Disconnect;
+                  telnet_error := 'SUCCCESS';
+                  TCustomerIP(IP_LIST[CUR_POS]).ON_OFF := ON_OFF;
+                end
+                else
+                begin
+                  telnet.Disconnect;
+                  telnet_error := ext_info+' command #save - error ' + response_result;
+                end; // save error
+              end
+              else
+              begin
+                telnet.Disconnect;
+                telnet_error := ext_info+' command #config - error ' + response_result;
+              end; // config on/off error
+            end
+            else
+            begin
+              telnet.Disconnect;
+              telnet_error := ext_info+' command #passw - error ' + response_result;
+            end; // password error
+          end
+          else
+          begin
+            telnet.Disconnect;
+            telnet_error := ext_info+' command #login - error ' + response_result;
+          end; // login error
+        end
+        else
+        begin
+          telnet.Disconnect;
+          telnet_error := ext_info+' command #aut - error ' + response_result;
+        end; // aut error
+
+      end;
+
+    {  if (telnet_error <> 'SUCCESS') then
+       TCustomerIP(IP_LIST[CUR_POS]).ON_OFF := not ON_OFF; }
+
+      status_str := CUR_CLIENT_IP.customer_fio + ' ' + CUR_CLIENT_IP.adress +
+        ' ' + cur_ip + ':' + IntToStr(cur_port) + ' STATUS:' +state+' '+ telnet_error;
+      Synchronize(SetStatus);
+
+    except
+      on E: EXCEPTION do
+      begin
+      { TCustomerIP(IP_LIST[CUR_POS]).ON_OFF := not ON_OFF; }
+        status_str := IntToStr(CUR_POS) + ' ' + cur_ip + 'error ' + E.Message;
+        Synchronize(SetStatus);
+        if (list_en <= CUR_POS + 1) then
+        begin
+          telnet.FreeOnRelease;
+          status_task := 'END';
+          Synchronize(SetProgress);
+        end;
+
+      end;
+
+    end;
+
+    Synchronize(SetProgress);
+
+    if (list_en <= CUR_POS + 1) then
+    begin
+
+      telnet.FreeOnRelease;
+      status_task := 'END';
+      Synchronize(SetProgress);
+    end;
+
+    inc(CUR_POS);
+    sleep(500);
+    LeaveCriticalSection(TelnetCritSect);
+  end;
+
+end;
+
+ Procedure TONOFF_GPON.SetStatus();
+begin
+  /// **
+  try
+    Application.ProcessMessages;
+    PinguinServerForm.Log(status_str, false);
+    PinguinServerForm.LogFile(status_str, 4);
+
+    PinguinServerForm.GLOBAL_SUCCESS_IP.Add(TCustomerIP(LIST_CLIENT[CUR_POS]));
+
+  except
+    on E: EXCEPTION do
+    begin
+      PinguinServerForm.Log('ONOFF_GPON TASK ERROR -  ' + E.Message, false);
+    end;
+
+  end;
+end;
+
+
+Procedure TSwithONOFF.SetStatus();
+begin
+  /// **
+  try
+    Application.ProcessMessages;
+    PinguinServerForm.Log(status_str, false);
+    PinguinServerForm.LogFile(status_str, 4);
+
+    PinguinServerForm.GLOBAL_SUCCESS_IP.Add(TCustomerIP(IP_LIST[CUR_POS]));
+
+  except
+    on E: EXCEPTION do
+    begin
+      PinguinServerForm.Log('1749 ' + E.Message, false);
+    end;
+
+  end;
+end;
+
+ Procedure TONOFF_GPON.SetProgress();
+var
+  Index: Integer;
+begin
+  try
+    with PinguinServerForm do
+    begin
+      GridTaskList.Cells[1, task_pos - 1] := IntToStr(CUR_POS + 1) + ' из ' +
+        IntToStr(LIST_CLIENT.Count);
+      GridTaskList.Cells[2, task_pos - 1] := status_task;
+
+      if (status_task = 'END') then
+      begin
+        DeleteARow(GridTaskList, task_pos - 1);
+      {  IF (ON_OFF) then
+        begin
+          index := ON_LIST.IndexOf(thread);
+          if (index > -1) then
+            ON_LIST.Delete(index);
+        end
+        else
+        begin
+          index := OFF_LIST.IndexOf(thread);
+          if (index > -1) then
+            OFF_LIST.Delete(index);
+        end;}
+
+        {if (ON_OFF) then
+        begin
+          if (ON_LIST.Count = 0) then
+          begin
+            EndedOnOffTask(ON_OFF, IP_LIST);
+          end;
+
+        end
+        else if (OFF_LIST.Count = 0) then
+          EndedOnOffTask(ON_OFF, IP_LIST);
+           }
+        Terminate;
+
+      end;
+
+    end;
+  except
+    on E: EXCEPTION do
+    begin
+      PinguinServerForm.Log('1792 task pos ' + IntToStr(task_pos) + ' list pos '
+        + IntToStr(LIST_CLIENT.Count) + ' ' + E.Message, false);
+    end;
+
+  end;
+end;
+
+
+Procedure TSwithONOFF.SetProgress();
+var
+  Index: Integer;
+begin
+  try
+    with PinguinServerForm do
+    begin
+      GridTaskList.Cells[1, task_pos - 1] := IntToStr(CUR_POS + 1) + ' из ' +
+        IntToStr(list_en);
+      GridTaskList.Cells[2, task_pos - 1] := status_task;
+
+      if (status_task = 'END') then
+      begin
+        DeleteARow(GridTaskList, task_pos - 1);
+        IF (ON_OFF in [1,3]) then
+        begin
+          index := ON_LIST.IndexOf(thread);
+          if (index > -1) then
+            ON_LIST.Delete(index);
+        end
+        else if(ON_OFF in [0,2])then
+        begin
+          index := OFF_LIST.IndexOf(thread);
+          if (index > -1) then
+            OFF_LIST.Delete(index);
+        end;
+
+        if (ON_OFF in [1,3]) then
+        begin
+          if (ON_LIST.Count = 0) then
+          begin { }
+            EndedOnOffTask(ON_OFF, IP_LIST);
+          end;
+
+        end
+        else if (OFF_LIST.Count = 0) then { }
+          EndedOnOffTask(ON_OFF, IP_LIST);
+
+        Terminate;
+
+      end;
+
+    end;
+  except
+    on E: EXCEPTION do
+    begin
+      PinguinServerForm.Log('1792 task pos ' + IntToStr(task_pos) + ' list pos '
+        + IntToStr(list_pos) + ' ' + E.Message, false);
+    end;
+
+  end;
+end;
+
+constructor TTask.Create(Asyspended: Boolean);
+begin
+  FreeOnTerminate := true;
+  inherited Create(Asyspended);
+end;
+
+procedure TTask.Execute;
+var
+  IP_object: TSwitch;
+  idICMP: TIdIcmpClient;
+  IP: String;
+  port: Integer;
+  i: Integer;
+  pinged: Boolean;
+  avg: Double;
+  pinged_false, pinged_true: Integer;
+begin
+  InitializeCriticalSection(sendCritSection);
+
+  idICMP := TIdIcmpClient.Create(nil);
+  idICMP.ReceiveTimeout := request_timeout;
+  idICMP.PacketSize := 24;
+  idICMP.Protocol := 1;
+  CUR_POS := lst_start;
+  // выполняем задачу пока не поступит сигнал завершения
+  while not Terminated do
+  begin
+    try
+      // Получим АИПИ адресс из массива списка
+      IP_object := TSwitch(switch_list[CUR_POS - 1]);
+
+      // вход в критическую секцию
+      EnterCriticalSection(sendCritSection);
+
+      idICMP.Host := IP_object.IP;
+      // idICMP.port := IP_object.port;
+
+      try
+
+        pinged := true;
+        pinged_false := 0;
+        pinged_true := 0;
+        for i := 1 to 4 do
+        begin
+          try
+            idICMP.ping;
+            sleep(250);
+            Application.ProcessMessages; // ne bloque pas l'application
+            if idICMP.ReplyStatus.ReplyStatusType = rsEcho Then
+            begin
+              pinged_true := pinged_true + 1;
+            end
+            else
+            begin
+              pinged_false := pinged_false + 1;
+            end; // pas d'йcho, on renvoi false.
+          except
+            pinged := false;
+
+          end;
+
+        end;
+
+        if (pinged_true > pinged_false) then
+          pinged := true
+        else
+          pinged := false;
+
+        Application.ProcessMessages;
+        // if ((idICMP.ReplyStatus.ReplyStatusType = rsEcho)or(idICMP.ReplyStatus.BytesReceived<>0)or(idICMP.ReplyStatus.FromIpAddress=IP_object.IP)) then
+        if (pinged) then
+        // if(Ping(IP_object.IP,15,avg))then
+        begin
+          // пингуется
+          LogStr := 'Thread ' + IntToStr(task_pos) + ' ' + IP_object.IP + ':' +
+            IntToStr(IP_object.port) + ' ping on ';
+          // Synchronize(SetLog);
+
+          IP_object.enable := true;
+          IP_object.status := 'online';
+          IP_object.ping := idICMP.ReplyStatus.BytesReceived;
+          IP_object.last_avb := DateTimeToStr(Now);
+          curIP := IP_object;
+          switch_list[CUR_POS - 1] := curIP;
+          Synchronize(SetStatus);
+
+        end
+        else // if ((idICMP.ReplyStatus.ReplyStatusType <> rsEcho)and(idICMP.ReplyStatus.BytesReceived=0)and(idICMP.ReplyStatus.FromIpAddress<>IP_object.IP)) then
+
+        begin
+          LogStr := 'Thread ' + IntToStr(task_pos) + ' ' + IP_object.IP + ':' +
+            IntToStr(IP_object.port) + ' ping off ';
+          // Synchronize(SetLog);
+
+          IP_object.enable := false;
+          IP_object.status := 'offline';
+          IP_object.ping := 0;
+          curIP := IP_object;
+          switch_list[CUR_POS - 1] := curIP;
+          Synchronize(SetStatus);
+
+        end;
+
+      except
+        on E: EXCEPTION do
+        begin
+          // не пингуется
+          { IP_object.enable := false;
+            IP_object.status := 'error_offline';
+            IP_object.ping := 0; }
+
+          curIP := IP_object;
+          Synchronize(SetStatus);
+
+          LogStr := E.Message + ' line 1350';
+          Synchronize(SetLog);
+        end;
+      end;
+
+      // Обновим статус
+      status_task := 'ACTIVE';
+      Synchronize(SetProgress);
+
+      LeaveCriticalSection(sendCritSection);
+
+      if (CUR_POS = lst_end) then
+      begin
+        CUR_POS := lst_start;
+
+        if (not restart_task) then
+        begin
+          // LogStr := 'Terminate '+IntToStr(cur_pos);
+          // Synchronize(SetLog);
+          Synchronize(DeleteTask);
+          Terminate;
+          idICMP.Free;
+        end
+        else
+        begin
+          status_task := 'RESTART';
+          Synchronize(SetProgress);
+        end;
+      end;
+      inc(CUR_POS);
+    except
+      on E: EXCEPTION do
+      begin
+        /// e.message
+        LogStr := E.Message + ' ' + IntToStr(CUR_POS) + ' line 599';
+        Synchronize(SetLog);
+      end;
+
+    end;
+    sleep(500);
+  end;
+end;
+
+Procedure TTask.SetProgress();
+begin
+  with PinguinServerForm do
+  begin
+    GridTaskList.Cells[1, task_pos - 1] := IntToStr(CUR_POS) + ' из ' +
+      IntToStr(lst_end);
+    GridTaskList.Cells[2, task_pos - 1] := status_task;
+  end;
+end;
+
+Procedure TTask.SetLog();
+begin
+  PinguinServerForm.Log(LogStr, false);
+end;
+
+Procedure TTask.DeleteTask();
+begin
+  PinguinServerForm.DeleteARow(PinguinServerForm.GridTaskList, (task_pos - 1));
+  // TerminateThread(GetCurrentThread,0);
+end;
+
+Procedure TTask.SetStatus();
+var
+  Client: TClient;
+  tcpClient: TClientSocket;
+  i: Integer;
+  json_obj: TJSONObject;
+  comm: String;
+begin
+
+  // EnterCriticalSection(sendCritSection);
+  try
+
+    if (not curIP.enable) then
+    begin
+
+      if (PinguinServerForm.Conf.write_log) then
+        PinguinServerForm.LogFile('Адрес не пингуется ' + curIP.IP + ' ' +
+          curIP.status + ':' + IntToStr(curIP.port) + ' ' + curIP.adress, 3);
+
+      LogStr := curIP.IP + ':' + curIP.status + ' адрес :' + curIP.adress;
+      Synchronize(SetLog);
+
+      try
+
+        // EnterCriticalSection(sendCritSection);
+        // PinguinServerForm.SendAllClient('не пингуется, последнии раз был доступен '+curIP.last_avb,curIP.adress,curIP.IP);
+        // Sleep(2000);
+        // LeaveCriticalSection(sendCritSection);
+
+        // tcpClient:= TClientSocket.Create(nil);
+        // i:=2;
+        { for i := 0 to tclient_list.Count - 1 do
+          begin
+          Client := TClient(tclient_list[i]);
+          { tcpClient.Host := client.client_ip;
+          tcpClient.Address := client.client_ip;
+          tcpClient.Port := client.client_port;
+          tcpClient.OnConnect:=SocketConnect; }
+        { json_obj := TJSONObject.Create;
+          comm := 'disable_ip';
+          json_obj.AddPair('request', comm);
+          json_obj.AddPair('ip', curIP.IP);
+          json_obj.AddPair('port', IntToStr(curIP.port));
+          json_obj.AddPair('ping', IntToStr(curIP.ping));
+          json_obj.AddPair('lastAvb', curIP.last_avb);
+          json_obj.AddPair('adress', curIP.adress);
+          send_json := json_obj.ToString;
+          EnterCriticalSection(sendCritSection);
+          PinguinServerForm.SendClientCommand(send_json, Client);
+          LeaveCriticalSection(sendCritSection);
+          LogStr := 'send ' + send_json;
+          Synchronize(SetLog);
+          // tcpClient.Active:= true;
+          json_obj.Free;
+          // Sleep(2000);
+          end; }
+
+      except
+        on E: EXCEPTION do
+        begin
+          LogStr := E.Message;
+          Synchronize(SetLog);
+        end;
+
+      end;
+
+    end;
+
+    // tcpClient.FreeOnRelease;
+  except
+    on E: EXCEPTION do
+    begin
+      LogStr := E.Message;
+      Synchronize(SetLog);
+    end;
+
+  end;
+  // LeaveCriticalSection(sendCritSection);
+end;
+
+procedure TTask.SocketConnect(Sender: TObject; Socket: TCustomWinSocket);
+begin
+  try
+    Socket.SendText(send_json);
+    Socket.Close;
+    send_json := '';
+  except
+    on E: EXCEPTION do
+    begin
+      LogStr := E.Message;
+      Synchronize(SetLog);
+    end;
+
+  end;
+end;
+
+destructor TTask.Destroy;
+begin
+  PinguinServerForm.DeleteARow(PinguinServerForm.GridTaskList, (task_pos - 1));
+  inherited;
+end;
+
+// Получение конфигурации из ini Фаила   --
+procedure TPinguinServerForm.FormClose(Sender: TObject;
+  var Action: TCloseAction);
+begin
+  sms.Destroy;
+  IdUDPServer1.Active := false;
+  IdUDPServerSNMPTRAP.Active := false;
+end;
+
+procedure TPinguinServerForm.FormCloseQuery(Sender: TObject;
+  var CanClose: Boolean);
+begin
+  if (MessageDlg('Вы уверены что хотите завершить работу' + #13 +
+    'Pinguin Server', mtInformation, mbYesNo, 0) = mrYes) then
+    CanClose := true
+  else
+    CanClose := false;
+end;
+
+procedure TPinguinServerForm.StartProgram();
+var
+  bot: TTelegramBot;
+begin
+  TrayIcon1.Visible := true;
+  Application.onMinimize := OnMinimizeProc;
+  // Загрузка конфигурации из ини фаила
+  GridTaskInit;
+  getConfigurable;
+  Task_List := TLIST.Create;
+  Task_List.clear;
+
+  ON_LIST := TLIST.Create;
+  OFF_LIST := TLIST.Create;
+
+  TelegramUsers := TLIST.Create;
+  Client_List := TLIST.Create;
+  CONDITION_LIST := TLIST.Create;
+  EVENTS_LIST := TLIST.Create;
+
+  If (Conf.base_or_file) then
+  begin
+    IP_LIST := getIPList;
+  end
+  else IF (OpenDialog1.Execute) THEN
+    IP_LIST := getIPListFromFile(OpenDialog1.FileName);
+
+  // Инициализация и запуск сервера сокетов
+  // InitSocketServer;
+  // FireBirdInit;
+  SQLiteInit; // создадим связь с локальнои базои данных
+  Client_List := GetClient();
+  // Получить список пользователеи телеграм
+  TelegramUsers := GetTelegramUser();
+  // получить условия на которые отправлять сообщение
+  CONDITION_LIST := GetCondition();
+  // получить список событии на которые нужно отреагировать
+  EVENTS_LIST := GetEvents();
+
+  if (Conf.start_ping) then
+  begin
+    PING1.Enabled := false;
+    StartPing;
+  end;
+  // Получить спиоок клиентов пингвина из локальнои базы
+
+  // UpdateListFromTime(0); // Обновить список немедленно
+
+  if (Conf.send_telegram) then
+  begin
+    ObjectBot := TTelegramObject.Create;
+   // bot := ObjectBot.StartListen(TelegramBotCallBack);
+   // if (ObjectBot.ConnectTelegramBot) then
+    begin
+      Log('TELEGRAMBOT STARTED', false);
+      addTaskGrid('TelegramBot', '', 'ACTIVE');
+      if (Conf.send_telegram) then
+        SendAllTelegram(ObjectBot, 'SYSLOGBOT STARTED', '', '');
+        SendAllTelegram(ObjectBot, 'Запущен в Тестовом режиме!!!!', '', '');
+    end;
+  end;
+end;
+
+procedure TPinguinServerForm.FormCreate(Sender: TObject);
+var
+  cur_act_key: String;
+  cur_serial_number: String;
+  S: TSerialNumber;
+begin
+
+  cur_act_key := S.ReadKey;
+
+ { if (S.ReallyActKey(cur_act_key)) then
+  begin }
+    StartProgram;
+ { end
+  else
+  begin
+    Application.ShowMainForm := false;
+    TrayIcon1.Visible := false;
+    ActivationForm := TActivationForm.Create(Self);
+    ActivationForm.ShowModal;
+  end; }
+
+end;
+
+Procedure TPinguinServerForm.getConfigurable();
+begin
+  try
+
+    RESTARTED_TASK_ON := false;
+    RESTARTED_TASK_OFF := false;
+
+    Ini := TIniFile.Create(ExtractFilePath(ParamStr(0)) + 'conf.ini');
+    Conf.base_server := Ini.ReadString('BASE', 'server', 'localhost');
+    Conf.base_port := Ini.ReadInteger('BASE', 'port', 8000);
+    Conf.base_name := Ini.ReadString('BASE', 'basename', 'test');
+    Conf.base_user := Ini.ReadString('BASE', 'username', 'test');
+    Conf.base_password := Ini.ReadString('BASE', 'password', 'test');
+
+    Conf.server_port := Ini.ReadInteger('SERVER', 'port', 8215);
+
+    Conf.base_or_file := Ini.ReadBool('SERVER', 'basefile', false);
+    Conf.count_task := Ini.ReadInteger('SERVER', 'counttask', 10);
+    Conf.timeout := Ini.ReadInteger('SERVER', 'timeout', 500);
+    Conf.restart_task := Ini.ReadBool('SERVER', 'restarttask', true);
+    Conf.update_ip_list := Ini.ReadInteger('SERVER', 'updatelist', 1);
+
+    Conf.syslog_server := Ini.ReadString('SYSLOG', 'server', '192.168.1.81');
+    Conf.syslog_port := Ini.ReadInteger('SYSLOG', 'port', 6000);
+
+    Conf.smsc_login := Ini.ReadString('SMSC', 'login', 'admin');
+    Conf.smsc_pass := Ini.ReadString('SMSC', 'password', 'admin');
+    Conf.smsc_phone := Ini.ReadString('SMSC', 'phone', '');
+
+    Conf.send_sms := Ini.ReadBool('SERVER', 'send_sms', false);
+    Conf.send_client := Ini.ReadBool('SERVER', 'send_client', false);
+    Conf.write_base := Ini.ReadBool('SERVER', 'write_base', false);
+    Conf.write_log := Ini.ReadBool('SERVER', 'write_log', true);
+    Conf.filtrated := Ini.ReadBool('SERVER', 'filtrated', false);
+
+    Conf.send_email := Ini.ReadBool('SERVER', 'send_email', false);
+    Conf.start_ping := Ini.ReadBool('SERVER', 'start_ping', false);
+
+    Conf.email_host := Ini.ReadString('EMAIL', 'smtphost', 'smtp.mail.ru');
+    Conf.email_port := Ini.ReadInteger('EMAIL', 'smtpport', 465);
+    Conf.email_username := Ini.ReadString('EMAIL', 'mailusername',
+      'username@mail.ru');
+    Conf.email_password := Ini.ReadString('EMAIL', 'mailpassword', '123456');
+    Conf.email_recipients := Ini.ReadString('EMAIL', 'mailadress',
+      'nonw@mail.ru,none2@mail.tu');
+
+
+    Conf.proxy_enable := Ini.ReadBool('PROXY', 'enable', false);
+    Conf.proxy_server := Ini.ReadString('PROXY', 'server', 'localhost');
+    Conf.proxy_port := Ini.ReadInteger('PROXY', 'port', 8080);
+    Conf.proxy_username := Ini.ReadString('PROXY', 'username', 'root');
+    Conf.proxy_password := Ini.ReadString('PROXY', 'password', '');
+
+    Conf.filtertext := Ini.ReadString('FILTER', 'textfind', 'test!test1');
+
+    Conf.send_telegram := Ini.ReadBool('SERVER', 'send_telegram', false);
+
+    sms := SMSC.Create;
+    // список всех выполненных откл/вкл портов
+    GLOBAL_SUCCESS_IP := TLIST.Create;
+
+    IdUDPServer1.Bindings.clear;
+    IdUDPServer1.Bindings.Add.IP := Conf.syslog_server;
+    IdUDPServer1.Bindings.Add.port := Conf.syslog_port;
+
+    IdUDPServer1.ThreadedEvent := true;
+    IdUDPServer1.Active := true;
+
+    IdUDPServerSNMPTRAP.Bindings.Clear;
+    IdUDPServerSNMPTRAP.Bindings.Add.IP := Conf.syslog_server;
+    IdUDPServerSNMPTRAP.Bindings.Add.port:= 162;
+    IdUDPServerSNMPTRAP.ThreadedEvent := true;
+    IdUDPServerSNMPTRAP.Active := true;
+
+
+    if (IdUDPServer1.Active) then
+      addTaskGrid('SYSLOG SERVER', '', 'ACTIVE');
+
+      if (IdUDPServerSNMPTRAP.Active) then
+      addTaskGrid('SNMP TRAP SERVER', '', 'ACTIVE');
+
+    Ini.Free;
+  EXCEPT
+    on E: EXCEPTION do
+    begin
+      Log(E.Message, false);
+    end;
+
+  end;
+end;
+
+Procedure TPinguinServerForm.SaveBaseSUCCESS_IP();
+var
+  Query: TFDQuery;
+  DATE_MODIFIED: String;
+  i: Integer;
+  CustIP: TCustomerIP;
+begin
+    try
+  FDConnection1.Connected := false;
+  FDConnection1.Params.clear;
+  FDConnection1.Params.Append('DriverID=FB');
+  FDConnection1.Params.Append('CharacterSet=UTF8');
+  FDConnection1.Params.Append('Server=' + Conf.base_server);
+  FDConnection1.Params.Append('Database=' + Conf.base_name);
+  FDConnection1.Params.Append('User_Name=' + Conf.base_user);
+  FDConnection1.Params.Append('Password=' + Conf.base_password);
+  FDConnection1.Params.Append('ExtendedMetadata=True');
+  FDConnection1.DriverName := 'FB';
+  FDConnection1.Connected := true;
+
+  Query := TFDQuery.Create(Self);
+  DATE_MODIFIED := FormatDateTime('dd.mm.yyyy h:n', Now);
+  Query.Connection := FDConnection1;
+
+
+  Query.Transaction := FDTransactionSave;
+
+  if not FDTransactionSave.Active then
+  FDTransactionSave.StartTransaction;
+
+  if (GLOBAL_SUCCESS_IP.Count > 0) then
+    for i := 0 to GLOBAL_SUCCESS_IP.Count - 1 do
+    begin
+
+      CustIP := TCustomerIP(GLOBAL_SUCCESS_IP[i]);
+
+      With Query do
+      begin
+
+        SQL.Text :=
+            'UPDATE OR INSERT INTO CUSTOMER_ONOFF_IP (CUSTOMER_ID,FIO,ADRESS,IP,PORT,STATUS,ON_OFF,DATE_CREATE,DATE_MODIFIED)'
+            + 'VALUES(:CUSTOMER_ID,:FIO,:ADRESS,:IP,:PORT,:STATUS,:ON_OFF,:DATE_CREATE,:DATE_MODIFIED) MATCHING (CUSTOMER_ID);';
+          ParamByName('CUSTOMER_ID').Value := CustIP.CUSTOMER_ID;
+          ParamByName('IP').Value := CustIP.IP;
+          ParamByName('FIO').Value := CustIP.customer_fio;
+          ParamByName('ADRESS').Value := CustIP.adress;
+          ParamByName('PORT').Value := CustIP.port;
+          ParamByName('STATUS').Value := 1;
+
+           case (CustIP.ON_OFF) of
+           0,2 : ParamByName('ON_OFF').Value := 0;
+           1,3 : ParamByName('ON_OFF').Value := 1;
+           end;
+
+         // ParamByName('ON_OFF').Value := CustIP.ON_OFF;
+          ParamByName('DATE_CREATE').Value := DATE_MODIFIED;
+          ParamByName('DATE_MODIFIED').Value := DATE_MODIFIED;
+
+              ExecSQL;
+      {  SQL.Text :=
+          'SELECT * FROM CUSTOMER_ONOFF_IP WHERE CUSTOMER_ID=:CUSTOMER_ID';
+
+        Active := true;
+
+        if RecordCount > 0 then
+        begin
+          Close;
+
+          SQL.Text :=
+            'UPDATE CUSTOMER_ONOFF_IP SET ON_OFF=:ON_OFF,DATE_MODIFIED=:DATE_MODIFIED,STATUS=1  WHERE CUSTOMER_ID=:CUSTOMER_ID';
+          ParamByName('CUSTOMER_ID').Value := CustIP.CUSTOMER_ID;
+          ParamByName('ON_OFF').Value := CustIP.ON_OFF;
+          ParamByName('DATE_MODIFIED').Value := DATE_MODIFIED;
+
+          ExecSQL;
+
+        end
+        else
+        begin
+          Close;
+          SQL.Text :=
+            'INSERT INTO CUSTOMER_ONOFF_IP (CUSTOMER_ID,FIO,ADRESS,IP,PORT,STATUS,ON_OFF,DATE_CREATE,DATE_MODIFIED)'
+            + 'VALUES(:CUSTOMER_ID,:FIO,:ADRESS,:IP,:PORT,:STATUS,:ON_OFF,:DATE_CREATE,:DATE_MODIFIED);';
+          ParamByName('CUSTOMER_ID').Value := CustIP.CUSTOMER_ID;
+          ParamByName('IP').Value := CustIP.IP;
+          ParamByName('FIO').Value := CustIP.customer_fio;
+          ParamByName('ADRESS').Value := CustIP.adress;
+          ParamByName('PORT').Value := CustIP.port;
+          ParamByName('STATUS').Value := 1;
+          ParamByName('ON_OFF').Value := CustIP.ON_OFF;
+          ParamByName('DATE_CREATE').Value := DATE_MODIFIED;
+          ParamByName('DATE_MODIFIED').Value := DATE_MODIFIED;
+
+          ExecSQL;
+
+        end; }
+
+      end;
+
+    end; // for
+  FDTransactionSave.Commit;
+  Query.Close;
+  Query.Free;
+  FDConnection1.Connected := false;
+
+   except on E:EXCEPTION do begin
+
+   FDTransactionSave.Rollback;
+    Query.Close;
+  Query.Free;
+  FDConnection1.Connected := false;   end;
+    end;
+
+end;
+
+Procedure TPinguinServerForm.SetStatusONOFF(CUSTOMER_ID: Integer;
+  IP, FIO, adress: String; port: Integer; status: Integer; ON_OFF: Boolean);
+var
+  Query: TFDQuery;
+  DATE_MODIFIED: String;
+begin
+
+  FDConnection1.Connected := false;
+  FDConnection1.Params.clear;
+  FDConnection1.Params.Append('DriverID=FB');
+  FDConnection1.Params.Append('CharacterSet=UTF8');
+  FDConnection1.Params.Append('Server=' + Conf.base_server);
+  FDConnection1.Params.Append('Database=' + Conf.base_name);
+  FDConnection1.Params.Append('User_Name=' + Conf.base_user);
+  FDConnection1.Params.Append('Password=' + Conf.base_password);
+  FDConnection1.Params.Append('ExtendedMetadata=True');
+  FDConnection1.DriverName := 'FB';
+  FDConnection1.Connected := true;
+
+  Query := TFDQuery.Create(Self);
+  DATE_MODIFIED := FormatDateTime('dd.mm.yyyy h:n', Now);
+  Query.Connection := FDConnection1;
+  With Query do
+  begin
+
+    SQL.Text :=
+      'SELECT * FROM CUSTOMER_ONOFF_IP WHERE CUSTOMER_ID=:CUSTOMER_ID and STATUS=0';
+
+    Active := true;
+
+    if RecordCount > 0 then
+    begin
+      Close;
+
+      SQL.Text :=
+        'UPDATE CUSTOMER_ONOFF_IP SET ON_OFF=:ON_OFF,DATE_MODIFIED=:DATE_MODIFIED,STATUS=1  WHERE CUSTOMER_ID=:CUSTOMER_ID and STATUS=0';
+      ParamByName('CUSTOMER_ID').Value := CUSTOMER_ID;
+      ParamByName('ON_OFF').Value := ON_OFF;
+      ParamByName('DATE_MODIFIED').Value := DATE_MODIFIED;
+
+      ExecSQL;
+
+    end
+    else
+    begin
+      Close;
+      SQL.Text :=
+        'INSERT INTO CUSTOMER_ONOFF_IP (CUSTOMER_ID,FIO,ADRESS,IP,PORT,STATUS,ON_OFF,DATE_CREATE,DATE_MODIFIED)'
+        + 'VALUES(:CUSTOMER_ID,:FIO,:ADRESS,:IP,:PORT,:STATUS,:ON_OFF,:DATE_CREATE,:DATE_MODIFIED);';
+      ParamByName('CUSTOMER_ID').Value := CUSTOMER_ID;
+      ParamByName('IP').Value := IP;
+      ParamByName('FIO').Value := FIO;
+      ParamByName('ADRESS').Value := adress;
+      ParamByName('PORT').Value := port;
+      ParamByName('STATUS').Value := status;
+      ParamByName('ON_OFF').Value := ON_OFF;
+      ParamByName('DATE_CREATE').Value := DATE_MODIFIED;
+      ParamByName('DATE_MODIFIED').Value := DATE_MODIFIED;
+
+      ExecSQL;
+
+    end;
+
+  end;
+
+  Query.Free;
+
+  FDConnection1.Connected := false;
+
+end;
+
+Function TPinguinServerForm.GetSuccessON_OFF(ON_OFF:BOOLEAN): TStringList;
+var
+  CUSTOMER_ID: Integer;
+  RES: TStringList;
+  ON_OFF_STR : String[10];
+begin
+   try
+  if(ON_OFF)THEN ON_OFF_STR :='1' else ON_OFF_STR:= '0';
+   if(FDConnection1.Ping)then
+   begin
+  RES := TStringList.Create;
+  RES.Clear;
+
+  FDConnection1.Connected := false;
+  FDConnection1.Params.clear;
+  FDConnection1.Params.Append('DriverID=FB');
+  FDConnection1.Params.Append('CharacterSet=UTF8');
+  FDConnection1.Params.Append('Server=' + Conf.base_server);
+  FDConnection1.Params.Append('Database=' + Conf.base_name);
+  FDConnection1.Params.Append('User_Name=' + Conf.base_user);
+  FDConnection1.Params.Append('Password=' + Conf.base_password);
+  FDConnection1.Params.Append('ExtendedMetadata=True');
+  FDConnection1.DriverName := 'FB';
+  FDConnection1.Connected := true;
+
+  FDQuery1.SQL.Text :=
+    'SELECT p1.CUSTOMER_ID FROM customer_onoff_ip p1 WHERE p1.status=1 and p1.ON_OFF='+ON_OFF_STR;
+
+  FDQuery1.Active := true;
+
+  while not FDQuery1.Eof do
+  begin
+    CUSTOMER_ID := FDQuery1.FieldByName('CUSTOMER_ID').AsInteger;
+    RES.Add(IntToStr(CUSTOMER_ID));
+    FDQuery1.Next;
+  end;
+  Result := RES;
+
+  FDQuery1.Close;
+  FDConnection1.Close;
+   end;
+   EXCEPT on E:EXCEPTION do begin end;
+
+   end;
+end;
+
+// получить список абонентов GPON
+function  TPinguinServerForm.GetGPON_Client(MINUS_OR_PLUS : BOOLEAN):Tlist;
+var   CUSTOMER_ID : Integer;
+      customer_fio : String;
+      adress : String;
+      IP : String;
+      port : Integer;
+      balance: Double;
+      SERVICE : String;
+      MAC : String;
+
+      GPON_Client : TGPON_CLIENT;
+      res : TList;
+
+  begin
+
+  res := TList.Create;
+
+    //********
+       if(FDConnection1.Ping)then
+   begin
+  FDConnection1.Connected := false;
+  FDConnection1.Params.clear;
+  FDConnection1.Params.Append('DriverID=FB');
+  FDConnection1.Params.Append('CharacterSet=UTF8');
+  FDConnection1.Params.Append('Server=' + Conf.base_server);
+  FDConnection1.Params.Append('Database=' + Conf.base_name);
+  FDConnection1.Params.Append('User_Name=' + Conf.base_user);
+  FDConnection1.Params.Append('Password=' + Conf.base_password);
+  FDConnection1.Params.Append('ExtendedMetadata=True');
+  FDConnection1.DriverName := 'FB';
+  FDConnection1.Connected := true;
+
+
+     if(MINUS_OR_PLUS=true)
+     then
+         FDQuery1.SQL.Text := ' SELECT DISTINCT c.customer_id,coalesce(c.surname,'''')||'' ''||coalesce(c.firstname,'''')||'' ''||coalesce(c.midlename,'''') FIO '+
+       ' ,e.ip,e.mac,t.port,s1.street_short||'' ''||s1.street_name||'' дом № ''||h.house_no||'' кв ''||c.flat_no adress,cs.submat_barcode,  '+
+       '  s.name service_name,(c.debt_sum*-1) debt_sum FROM subscr_serv ss,services s,tv_lan t,equipment e,customer_submaterial cs,CUSTOMER c '+
+       '  LEFT JOIN HOUSE h on(h.house_id=c.house_id)  '+
+       '  LEFT JOIN STREET s1 on(s1.street_id=h.street_id) '+
+       '  WHERE         ss.customer_id=c.customer_id    '+
+       '  and ss.serv_id=s.service_id  and s.business_type=3  '+
+       '  and t.customer_id=c.customer_id   and t.eq_id=e.eid '+
+       '  and cs.MAT_ID<>19469 and cs.customer_id=c.customer_id and ((cs.submat_barcode is not null)and(cs.submat_barcode<>''''))'+
+       '  and (c.debt_sum*-1)<0'
+       else
+    FDQuery1.SQL.Text := ' SELECT DISTINCT c.customer_id,coalesce(c.surname,'''')||'' ''||coalesce(c.firstname,'''')||'' ''||coalesce(c.midlename,'''') FIO '+
+       ' ,e.ip,e.mac,t.port,s1.street_short||'' ''||s1.street_name||'' дом № ''||h.house_no||'' кв ''||c.flat_no adress,cs.submat_barcode,  '+
+       '  s.name service_name,(c.debt_sum*-1) debt_sum FROM subscr_serv ss,services s,tv_lan t,equipment e,customer_submaterial cs,CUSTOMER c '+
+       '  LEFT JOIN HOUSE h on(h.house_id=c.house_id)  '+
+       '  LEFT JOIN STREET s1 on(s1.street_id=h.street_id) '+
+       '  WHERE         ss.customer_id=c.customer_id    '+
+       '  and ss.serv_id=s.service_id  and s.business_type=3  '+
+       '  and t.customer_id=c.customer_id   and t.eq_id=e.eid '+
+       '  and cs.MAT_ID<>19469 and  cs.customer_id=c.customer_id and ((cs.submat_barcode is not null)and(cs.submat_barcode<>''''))'+
+       '  and (c.debt_sum*-1)>=0';
+
+
+     FDQuery1.Active := true;
+
+  while not FDQuery1.Eof do
+  begin
+    CUSTOMER_ID := FDQuery1.FieldByName('CUSTOMER_ID').AsInteger;
+    customer_fio := FDQuery1.FieldByName('FIO').AsString;
+    adress := FDQuery1.FieldByName('ADRESS').AsString;
+    IP := FDQuery1.FieldByName('IP').AsString;
+    port := FDQuery1.FieldByName('PORT').AsInteger;
+    balance := FDQuery1.FieldByName('DEBT_SUM').AsFloat;
+    SERVICE := FDQuery1.FieldByName('SERVICE_NAME').AsString;
+    MAC :=  FDQuery1.FieldByName('SUBMAT_BARCODE').AsString;
+
+
+    if(length(MAC)>4) then
+    begin
+      MAC := LowerCase(Copy(MAC,0,4)+'.'+Copy(MAC,5,4)+'.'+Copy(MAC,9,4));
+    end;
+
+
+    GPON_Client := TGPON_CLIENT.Create;
+
+    GPON_Client.MAC := MAC;
+    GPON_Client.CUSTOMER_ID := CUSTOMER_ID;
+    GPON_Client.ADRESS := adress;
+    GPON_Client.IP := IP;
+    GPON_Client.tv_inet_all := 3;
+
+    res.Add(GPON_Client);
+
+    FDQuery1.Next;
+  end;
+
+
+   end;
+   Result := res;
+
+  end;
+
+// получить список клиентов с их аипи для отклбчения или включения
+Function TPinguinServerForm.GetCustomerIP(get_id: Byte; param1: String;selectcity:Byte): TLIST;
+var
+  res: TLIST;
+  CUSTOMER_ID: Integer;
+  customer_fio: STRING;
+  IP: STRING;
+  port: Integer;
+  MAC: STRING;
+  balance: Double;
+  SERVICE: STRING;
+  adress: STRING;
+
+  CUST_IP: TCustomerIP;
+  LIST_ONOFF_SUCCESS : TStringList;
+  addsql : String;
+begin
+     try
+   if((get_id=1)or(get_id=5)) then
+   begin              // false - это 1 true - 0
+   LIST_ONOFF_SUCCESS := GetSuccessON_OFF(true);
+   end;
+
+      addsql := 'left join STREET st on(st.street_id=h.street_id) ';
+
+
+      if(selectcity=1) then
+      begin
+       addsql := 'inner join STREET st on(st.street_id=h.street_id and st.af_id=1) ';
+      end
+      else if (selectcity=2) then
+      begin
+        addsql := 'inner join STREET st on(st.street_id=h.street_id and st.af_id=2) ';
+      end
+      else if (selectcity=0) then
+      begin
+        addsql := 'inner join STREET st on(st.street_id=h.street_id) ';
+      end;
+
+
+     res := TLIST.Create;
+
+   if(FDConnection1.Ping)then
+   begin
+  FDConnection1.Connected := false;
+  FDConnection1.Params.clear;
+  FDConnection1.Params.Append('DriverID=FB');
+  FDConnection1.Params.Append('CharacterSet=UTF8');
+  FDConnection1.Params.Append('Server=' + Conf.base_server);
+  FDConnection1.Params.Append('Database=' + Conf.base_name);
+  FDConnection1.Params.Append('User_Name=' + Conf.base_user);
+  FDConnection1.Params.Append('Password=' + Conf.base_password);
+  FDConnection1.Params.Append('ExtendedMetadata=True');
+  FDConnection1.DriverName := 'FB';
+  FDConnection1.Connected := true;
+
+  case get_id of
+
+    0:
+      begin
+        // список должников на отключение
+        FDQuery1.SQL.Text :=
+          'SELECT DISTINCT c.customer_id,c.surname||'' ''||c.firstname||'' ''||c.midlename FIO '
+          + ',e.ip,e.mac,t.port,st.street_short||'' ''||st.street_name||'' дом № ''||h.house_no||'' кв ''||c.flat_no adress, '
+          + ' s.name service_name,(c.debt_sum*-1) debt_sum FROM CUSTOMER c,subscr_serv ss,services s,tv_lan t,equipment e,house h, STREET st WHERE '
+          + ' c.customer_id=ss.customer_id and ss.serv_id=s.service_id  ' +
+          ' and s.business_type=1 ' + ' and t.customer_id=c.customer_id ' +
+          ' and t.eq_id=e.eid   ' + ' and e.house_id=h.house_id ' +
+          ' and h.street_id=st.street_id' + ' and ((c.debt_sum*-1) <-500)';
+      end;
+    1:
+      begin
+        // список абонентов которых нужно включить, интернет абоненты с оплатои за текущ, день
+        FDQuery1.SQL.Text :=
+          ' SELECT DISTINCT c.customer_id,c.surname||'' ''||c.firstname||'' ''||c.midlename FIO  '
+          + ',e.ip,e.mac,t.port,s1.street_short||'' ''||s1.street_name||'' дом № ''||h.house_no||'' кв ''||c.flat_no adress,'
+          + ' s.name service_name,(c.debt_sum*-1) debt_sum FROM subscr_serv ss,services s,tv_lan t,equipment e,payment p,CUSTOMER c '
+          + ' LEFT JOIN HOUSE h on(h.house_id=c.house_id) ' +
+          ' LEFT JOIN STREET s1 on(s1.street_id=h.street_id) ' +
+          ' WHERE        ' + ' ss.customer_id=c.customer_id  ' +
+          ' and ss.serv_id=s.service_id ' + ' and s.business_type=1   ' +
+          ' and t.customer_id=c.customer_id  ' + ' and t.eq_id=e.eid ' +
+        //  ' and (c.debt_sum*-1)>=0 ' + ' and p.customer_id=c.customer_id ' +
+          ' and (c.debt_sum*-1)>-300 ' + ' and p.customer_id=c.customer_id ' +
+          ' and p.pay_date=' + QuotedStr(FormatDateTime('dd.mm.yyyy', Now)) ;
+      end;
+    2:
+      begin
+        FDQuery1.SQL.Text :=
+          'SELECT DISTINCT c.customer_id,c.surname||'' ''||c.firstname||'' ''||c.midlename FIO '
+          + ',e.ip,e.mac,t.port,st.street_short||'' ''||st.street_name||'' дом № ''||h.house_no||'' кв ''||c.flat_no adress, '
+          + ' s.name service_name,(c.debt_sum*-1) debt_sum FROM CUSTOMER c,subscr_serv ss,services s,tv_lan t,equipment e,house h, STREET st WHERE '
+          + ' c.customer_id=ss.customer_id and ss.serv_id=s.service_id  ' +
+          ' and s.business_type=1 ' + ' and t.customer_id=c.customer_id ' +
+          ' and t.eq_id=e.eid   ' + ' and e.house_id=h.house_id ' +
+          ' and h.street_id=st.street_id' + ' and c.account_no in (' +
+          param1 + ')';
+      end;
+
+    3:
+      begin
+        FDQuery1.SQL.Text :=
+          'SELECT p.CUSTOMER_ID,p.FIO,p.ADRESS,p.IP,p.PORT,p.ON_OFF,0 DEBT_SUM,'' SERVICE_NAME FROM customer_onoff_ip p WHERE p.status=0';
+      end;
+
+    4:
+      begin
+
+        FDQuery1.SQL.Text :=
+          'select  DISTINCT c.customer_id,c.surname||'' ''||c.firstname||'' ''||c.midlename FIO '
+          + '   ,e.ip,e.mac,t.port,st.street_short||'' ''||st.street_name||'' дом № ''||h.house_no||'' кв ''||c.flat_no adress,'
+          + '   '''' service_name,0 debt_sum  ' +
+          ' from customer c  ' +
+          'inner join subscr_serv ss on (ss.customer_id = c.customer_id and ss.state_sgn = 1) '
+          + 'inner join services s on (s.service_id = ss.serv_id and s.business_type = 1) '
+          + 'inner join tv_lan t on (c.customer_id = t.customer_id) ' +
+          'inner join equipment e on (t.eq_id = e.eid) ' +
+          'left join HOUSE h on(h.house_id=c.house_id)   ' +
+          addsql +
+          'left outer join customer_attributes caa on (c.customer_id = caa.customer_id and caa.o_id = 24427)'
+          + 'left outer join customer_attributes ca on (c.customer_id = ca.customer_id and ca.o_id = 27229) '
+          + 'left outer join customer_attributes caaa on (c.customer_id = caaa.customer_id and caaa.o_id = 24748) '
+        + 'where c.cust_state = 1 and ((c.debt_sum*-1) < -500)  ' +
+        ' and not exists(SELECT ca.ca_id FROM customer_attributes ca WHERE ca.customer_id=c.customer_id and ca.o_id=27229) '+
+          'order by c.cust_code';
+
+      end;
+
+        5:
+      begin
+        // список абонентов которых нужно включить, интернет абоненты с оплатои за текущ и вчерашнии, день
+        FDQuery1.SQL.Text :=
+
+         ' SELECT DISTINCT c.customer_id,c.surname||'' ''||c.firstname||'' ''||c.midlename FIO  '
+          + ',e.ip,e.mac,t.port,s1.street_short||'' ''||s1.street_name||'' дом № ''||h.house_no||'' кв ''||c.flat_no adress,'
+          + ' s.name service_name,(c.debt_sum*-1) debt_sum FROM subscr_serv ss,services s,tv_lan t,equipment e,payment p,CUSTOMER c '
+          + ' LEFT JOIN HOUSE h on(h.house_id=c.house_id) ' +
+          ' LEFT JOIN STREET s1 on(s1.street_id=h.street_id) ' +
+          ' WHERE        ' + ' ss.customer_id=c.customer_id  ' +
+          ' and ss.serv_id=s.service_id ' + ' and s.business_type=1   ' +
+          ' and t.customer_id=c.customer_id  ' + ' and t.eq_id=e.eid ' +
+        //  ' and (c.debt_sum*-1)>=0 ' + ' and p.customer_id=c.customer_id ' +
+          ' and (c.debt_sum*-1)>-500 ' + ' and p.customer_id=c.customer_id ' +
+          ' and p.pay_date BETWEEN ' + QuotedStr(FormatDateTime('dd.mm.yyyy', IncDay(Now,-1)))+' and ' + QuotedStr(FormatDateTime('dd.mm.yyyy', Now));
+      end;
+
+  end;
+
+  FDQuery1.Active := true;
+
+  while not FDQuery1.Eof do
+  begin
+    CUSTOMER_ID := FDQuery1.FieldByName('CUSTOMER_ID').AsInteger;
+    customer_fio := FDQuery1.FieldByName('FIO').AsString;
+    adress := FDQuery1.FieldByName('ADRESS').AsString;
+    IP := FDQuery1.FieldByName('IP').AsString;
+    port := FDQuery1.FieldByName('PORT').AsInteger;
+    balance := FDQuery1.FieldByName('DEBT_SUM').AsFloat;
+    SERVICE := FDQuery1.FieldByName('SERVICE_NAME').AsString;
+
+    // Добавление в список аипи адресов
+    if(get_id=1)and(LIST_ONOFF_SUCCESS.IndexOf(IntToStr(CUSTOMER_ID))=-1) then
+    begin
+    CUST_IP := TCustomerIP.Create(CUSTOMER_ID, customer_fio, adress, IP, port,MAC, SERVICE);
+    res.Add(CUST_IP);
+    end
+    else if(get_id<>1) then
+    begin
+    CUST_IP := TCustomerIP.Create(CUSTOMER_ID, customer_fio, adress, IP, port,MAC, SERVICE);
+    res.Add(CUST_IP);
+    end;
+
+    FDQuery1.Next;
+  end;
+  result := res;
+
+  FDQuery1.Close;
+  FDConnection1.Close;
+
+   end;
+     EXCEPT on e :EXCEPTION do
+     begin Result := res; end;
+
+     end;
+end;
+
+// Загрузка списка аипи адресов из базы данных
+Function TPinguinServerForm.getIPList(): TLIST;
+var
+  switch: TSwitch;
+  IP: String;
+  port: Integer;
+  status: String;
+  adress: String;
+  lst: TLIST;
+begin
+  //
+  try
+  lst := TLIST.Create;
+  { FDConnection1.Connected := false;
+    // FDConnection1.Params.Clear;
+    FDConnection1.Params.Values['Login Prompt'] := 'false';
+    FDConnection1.Params.Values['DriverID'] := 'FB';
+    FDConnection1.Params.Values['Database'] := Conf.base_name;
+    FDConnection1.Params.Values['User_Name'] := Conf.base_user;
+    FDConnection1.Params.Values['Password'] := Conf.base_password;
+    FDConnection1.Params.Values['Server'] := Conf.base_server;
+    FDConnection1.Connected := True; }
+
+  FDConnection1.Connected := false;
+  FDConnection1.Params.clear;
+  FDConnection1.Params.Append('DriverID=FB');
+  FDConnection1.Params.Append('CharacterSet=UTF8');
+  FDConnection1.Params.Append('Server=' + Conf.base_server);
+  FDConnection1.Params.Append('Database=' + Conf.base_name);
+  FDConnection1.Params.Append('User_Name=' + Conf.base_user);
+  FDConnection1.Params.Append('Password=' + Conf.base_password);
+  FDConnection1.Params.Append('ExtendedMetadata=True');
+  FDConnection1.DriverName := 'FB';
+  FDConnection1.Connected := true;
+
+  IP_LIST := TLIST.Create;
+  FDQuery1.SQL.Text :=
+    'SELECT s.street_short || '' ''|| s.street_name as street,h.house_no,af.afname' +
+    ' ,E.IP, coalesce(E.parent_port,0) PORT, E.MAC,E.e_admin, E.E_PASS, E.last_update'
+    + ' FROM EQUIPMENT E ' +
+    'left outer join house h on (e.house_id = h.house_id) ' +
+    'left outer join street s on (s.street_id = h.street_id) ' +
+    'left outer join affiliate af on (af.af_id=s.af_id)' +
+    'left outer join objects o on (e.eq_group = o.o_id)' +
+    'WHERE E.ip is not null';
+
+  FDQuery1.Active := true;
+
+  while not FDQuery1.Eof do
+  begin
+    IP := FDQuery1.FieldByName('IP').AsString;
+    port := FDQuery1.FieldByName('PORT').AsInteger;;
+    adress := FDQuery1.FieldByName('AFNAME').AsString+':'+FDQuery1.FieldByName('STREET').AsString + ' дом ' +
+      FDQuery1.FieldByName('HOUSE_NO').AsString;
+    status := 'n/a';
+    // Добавление в список аипи адресов
+
+    switch := TSwitch.Create(IP, port, status, adress);
+    lst.Add(switch);
+
+    FDQuery1.Next;
+  end;
+  result := lst;
+
+  FDQuery1.Close;
+  FDConnection1.Close;
+  except on E:EXCEPTION do begin Log('error '+e.Message,false); end;
+
+  end;
+end;
+
+function TPinguinServerForm.getIPListFromFile(FilePath: String): TLIST;
+var
+  f: TextFile;
+  buf: String;
+  a: Strings;
+  IP: TSwitch;
+  lst: TLIST;
+begin
+  lst := TLIST.Create;
+  Log(FilePath, false);
+  AssignFile(f, FilePath); // {$!-}
+  Reset(f); // открыть для чтения {$I+}
+
+  while not Eof(f) do
+  begin
+    Readln(f, buf);
+    a := Explode(buf, ':');
+    IP := TSwitch.Create(a[0], StrToInt(a[1]), 'added', 'n/a');
+    lst.Add(IP);
+  end;
+  // CloseFile(f);
+  // end;
+  result := lst;
+end;
+
+Procedure TPinguinServerForm.GridTaskInit();
+begin
+  GridTaskList.RowCount := 1;
+  GridTaskList.FixedCols := 0;
+  GridTaskList.ColCount := 3;
+  GridTaskList.Cells[0, 0] := 'Найменование';
+  GridTaskList.ColWidths[0] := 350;
+  GridTaskList.Cells[1, 0] := 'Выполнено';
+  GridTaskList.ColWidths[1] := 150;
+  GridTaskList.Cells[2, 0] := 'Статус';
+  GridTaskList.ColWidths[2] := 100;
+
+end;
+
+
+ Function TEventsONOFF.WaitFor(response: String): Boolean;
+var
+  i: Integer;
+  Next: Boolean;
+  res: Boolean;
+begin
+  try
+    i := 0;
+    Next := true;
+    while Next do
+    begin
+      if pos(LowerCase(response), LowerCase(response_result)) > 0 then
+      begin
+        res := true;
+        Next := false;
+        // response_result := '';
+      end;
+
+      if (i = 300) then
+      begin
+        res := false;
+        Next := false;
+      end;
+      Application.ProcessMessages;
+      sleep(100);
+      inc(i);
+    end;
+
+  except
+    on E: EXCEPTION do
+    begin
+      result := false;
+    end;
+  end;
+
+  result := res;
+end;
+
+
+
+Function TONOFF_GPON.WaitFor(response: String): Boolean;
+var
+  i: Integer;
+  Next: Boolean;
+  res: Boolean;
+begin
+  try
+    i := 0;
+    Next := true;
+    while Next do
+    begin
+      if pos(LowerCase(response), LowerCase(response_result)) > 0 then
+      begin
+        res := true;
+        Next := false;
+        // response_result := '';
+      end;
+
+      if (i = 300) then
+      begin
+        res := false;
+        Next := false;
+      end;
+      Application.ProcessMessages;
+      sleep(100);
+      inc(i);
+    end;
+
+  except
+    on E: EXCEPTION do
+    begin
+      result := false;
+    end;
+  end;
+
+  result := res;
+end;
+
+
+Function TSwithONOFF.WaitFor(response: String): Boolean;
+var
+  i: Integer;
+  Next: Boolean;
+  res: Boolean;
+begin
+  try
+    i := 0;
+    Next := true;
+    while Next do
+    begin
+      if pos(LowerCase(response), LowerCase(response_result)) > 0 then
+      begin
+        res := true;
+        Next := false;
+        // response_result := '';
+      end;
+
+      if (i = 300) then
+      begin
+        res := false;
+        Next := false;
+      end;
+      Application.ProcessMessages;
+      sleep(100);
+      inc(i);
+    end;
+
+  except
+    on E: EXCEPTION do
+    begin
+      result := false;
+    end;
+  end;
+
+  result := res;
+end;
+
+Function TPinguinServerForm.WaitFor(response: String): Boolean;
+var
+  i: Integer;
+  Next: Boolean;
+  res: Boolean;
+begin
+  try
+    i := 0;
+    Next := true;
+    while Next do
+    begin
+      if pos(LowerCase(response), LowerCase(response_result)) > 0 then
+      begin
+        res := true;
+        Next := false;
+        // response_result := '';
+      end;
+
+      if (i = 300) then
+      begin
+        res := false;
+        Next := false;
+      end;
+      Application.ProcessMessages;
+      sleep(100);
+      inc(i);
+    end;
+
+  except
+    on E: EXCEPTION do
+    begin
+      result := false;
+    end;
+  end;
+
+  result := res;
+end;
+
+procedure TPinguinServerForm.GroupBox2Click(Sender: TObject);
+var
+  S: TSerialNumber;
+  List_IP : Tlist;
+begin
+//List_IP := TStringList.Create;
+ // ShowMessage(S.GetSerialNumber);
+ShowMessage(IntToStr(TStringList(GetSuccessON_OFF(True)).Count));
+
+end;
+
+procedure TPinguinServerForm.HTTPServerCommandGet(AContext: TIdContext;
+  ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo);
+
+  var JsonObject,JSON: TJSONObject;
+
+  request : String;
+
+  command : String;
+
+begin
+
+      if  Not ((ARequestInfo.AuthUsername = 'user') and
+              (ARequestInfo.AuthPassword = 'pass'))  Then Begin
+         AResponseInfo.AuthRealm := 'Аутентификация в систему PinguinServer';
+         AResponseInfo.WriteContent;
+         Exit;
+     End;
+
+    request := AResponseInfo.ContentText;
+
+     JSON:=TJSONObject.ParseJSONValue(request) as TJSONObject;
+
+     command := JSON.Values['command'].Value;
+
+     // Добавить новый фильтр
+     if(command = 'add_filter') then
+     begin
+
+      JSON.Values['filter_condition'].Value;
+      JSON.Values['message'].Value;
+      JSON.Values['send_to'].Value; // 1 - sms 2- telegram 3- email
+
+     end;
+
+         // Добавить новый фильтр
+     if(command = 'add_personal_filter') then
+     begin
+      JSON.Values['event_syslog'].Value;
+      JSON.Values['filter_condition'].Value;
+      JSON.Values['command_onoff'].Value;  // 0- huawei on 1- huawei off 2- dlink on 3- dlink off
+      JSON.Values['send_to'].Value; // 1 - sms 2- telegram 3- email
+      JSON.Values['message'].Value;
+      JSON.Values['ip_for_command'].Value;
+      JSON.Values['filter_condition'].Value;
+      JSON.Values['login'].Value;
+      JSON.Values['password'].Value;
+      JSON.Values['port'].Value;
+
+     end;
+      // вкл/выкл стандартные свитчи
+          if(command = 'onoff') then
+     begin
+       JSON.Values['onoff'].Value; // 0 - off 1- on
+       JSON.Values['filter'].Value;  // 0 - абоненты которые должны
+
+
+     end;
+
+    // вкл/выкл gpon
+    if(command = 'onoff_gpon') then
+     begin
+       JSON.Values['onoff'].Value; // 0 - off 1- on
+       JSON.Values['filter'].Value;  // 0 - абоненты которые должны
+     end;
+
+
+
+   if ARequestInfo.Params.Values['command'] = 'userLogin' then
+   begin
+
+     JsonObject:=TJSONObject.Create;
+ // JsonObject.AddPair('success', true);
+  JsonObject.AddPair('error', '');
+ // JsonObject.AddPair('error_code', 0);
+
+   end;
+   //   AResponseInfo.AcceptCharSet := 'UTF-8';
+    //  AResponseInfo.ContentType := 'application/json';
+     //  AResponseInfo.ContentText := 'result_OK';
+end;
+
+// информацию о задачах, связь потоков и отображение их работы
+function TPinguinServerForm.addTaskGrid(task_name: String; result_task: String;
+  status_task: String): Integer;
+var
+  CUR_POS: Integer;
+begin
+
+  CUR_POS := GridTaskList.RowCount + 1;
+  GridTaskList.RowCount := CUR_POS;
+  if (GridTaskList.RowCount = 2) then
+    GridTaskList.FixedRows := 1;
+  GridTaskList.Cells[0, CUR_POS - 1] := task_name;
+  GridTaskList.Cells[1, CUR_POS - 1] := result_task;
+  GridTaskList.Cells[2, CUR_POS - 1] := status_task;
+  result := CUR_POS;
+end;
+
+Procedure TPinguinServerForm.Log(Log: String; clear: Boolean);
+begin
+
+  if (clear) then
+    LogsMemo.clear;
+  LogsMemo.Lines.Add('[' + DateTimeToStr(Now) + '] ' + Log);
+
+end;
+
+procedure TPinguinServerForm.N10Click(Sender: TObject);
+begin
+  AboutForm := TAboutForm.Create(nil);
+  AboutForm.show;
+end;
+
+procedure TPinguinServerForm.N11Click(Sender: TObject);
+var
+  i: Integer;
+begin
+  try
+    Log('task count ' + IntToStr(Task_List.Count), false);
+    for i := 0 to Task_List.Count - 1 do
+    begin
+      TThread(Task_List[i]).Terminate;
+      Task_List.Delete(i);
+    end;
+  except
+    on E: EXCEPTION do
+    begin
+      Log(E.Message, false);
+    end;
+
+  end;
+end;
+
+procedure TPinguinServerForm.N12Click(Sender: TObject);
+begin
+  ShowWindow(Handle, SW_SHOWNORMAL);
+end;
+
+
+ procedure TPinguinServerForm.SetGPON_ON_OFF(ip:String;mac:String;login,password:String;tv_internet:Boolean;on_off:Boolean);
+ var onoff_str : String;
+
+
+   st_pos : Integer;
+   en_pos : Integer;
+   Epon_Port :String;
+ begin
+ try
+  IdTelnet1.Host:= ip;
+  IdTelnet1.Port:= 23;
+  IdTelnet1.Connect;
+
+  if(on_off) then onoff_str := 'enable' else onoff_str:= 'disable';
+
+ if(IdTelnet1.Connected) then
+ begin
+   if (WaitFor('username')) then
+      begin
+    IdTelnet1.SendString('netadmin' + #13);
+   if (WaitFor('password')) then
+                      begin
+   IdTelnet1.SendString('netadmin' + #13);
+   if (WaitFor('>')) then
+                   begin
+
+     IdTelnet1.SendString('enable' + #13);
+     if (WaitFor('#')) then
+                   begin
+
+     IdTelnet1.SendString('config' + #13);
+       if (WaitFor('#')) then
+                   begin
+       IdTelnet1.SendString('show epon onu-information mac-address '+mac + #13);
+        if (WaitFor(':')) then
+                   begin
+
+          if (WaitFor('#')) then
+          begin
+        en_pos :=  Pos('xPON',response_result);
+        if(en_pos=0) then
+        en_pos := Pos('SNR',response_result);
+
+        st_pos  := Pos('EPON0',response_result,(en_pos-15));
+
+
+
+
+         if((st_pos>0)and(en_pos>0)) then
+         begin
+          Epon_Port:= Trim(Copy(response_result,st_pos,(en_pos-st_pos)));
+          Log('EPONPOR - '+Epon_Port,false);
+
+          IdTelnet1.SendString('interface '+Epon_Port + #13);
+            if (WaitFor('#')) then
+            begin
+
+            if(tv_internet)then
+            begin
+
+          if(on_off) then IdTelnet1.SendString('epon onu catv enable' + #13)
+          else
+          IdTelnet1.SendString('epon onu catv disable' + #13);
+
+             if (WaitFor('#')) then
+            begin
+            // команда выполнено успешно
+
+                 IdTelnet1.SendString('exit' + #13);
+      if (WaitFor('#')) then
+                begin
+      IdTelnet1.SendString('write all' + #13);
+       if (WaitFor('OK!')) then
+                begin
+         IdTelnet1.SendString('exit' + #13);
+        if (WaitFor('#')) then
+                begin
+
+         // разорвал связь
+                end;
+
+                end;
+
+
+                end;
+
+            end;
+
+
+            end // отключить/включить тв
+            else  // отключить/вкл интернет
+            begin
+               if(on_off) then  IdTelnet1.SendString('no epon onu port 1 ctc shutdown' + #13)
+          else  IdTelnet1.SendString('epon onu port 1 ctc shutdown' + #13);
+
+
+             if (WaitFor('#')) then
+            begin
+            // команда выполнено успешно
+                IdTelnet1.SendString('exit' + #13);
+      if (WaitFor('#')) then
+                begin
+      IdTelnet1.SendString('write all' + #13);
+       if (WaitFor('OK!')) then
+                begin
+         IdTelnet1.SendString('exit' + #13);
+        if (WaitFor('#')) then
+                begin
+
+         // разорвал связь
+                end;
+
+                end;
+
+
+                end;
+
+
+            end;
+            end;
+
+             end;
+
+
+            end;
+
+
+         end;
+
+
+                   end;
+
+
+                   end;
+
+
+                   end;
+
+
+
+
+
+                   end;//#
+                        end; //password
+      end;//username
+      IdTelnet1.Disconnect;
+      Log('DISCONECTED',false);
+ end;// telnet connected
+
+ except on e:EXCEPTION do begin LogFile('DLINK ONOFF error '+e.Message,1); end;
+
+
+ end;
+
+ end;
+
+
+
+function TPinguinServerForm.GetIPFromString(sinp: string): TparseIP;
+var s:string;
+
+begin
+
+Result.Port := trim(Copy(sinp,Pos('Port',sinp)+4 , 3  ));
+
+if Pos('.',sinp)=0 then
+ sinp:=sinp+'.';
+//Если текст не содержит точек, то добавляем ее в конец.
+
+//Будем преобразовывать весь текст до первой точки.
+Delete(sinp,1,Pos('.',sinp)-3);
+//Вырезаем преобразованый текст из введенного
+
+s:=Copy(sinp,1,Pos('.',sinp)-1);
+//Будем преобразовывать весь текст до первой точки.
+Delete(sinp,1,Pos('.',sinp));
+
+s:=IntToStr(Min(255,Max(0,StrToIntDef(s,127))));
+//Ограничиваем преобразованый текст рамками 0-255, а если преобразование
+//не возможно - подставляем 127.
+Result.IP:=s+'.';
+//Формируем результат
+
+if Pos('.',sinp)=0 then
+ sinp:=sinp+'.';
+s:=Copy(sinp,1,Pos('.',sinp)-1);
+Delete(sinp,1,Pos('.',sinp));
+s:=IntToStr(Min(255,Max(0,StrToIntDef(s,0))));
+Result.IP:=Result.IP+s+'.';
+//Все аналогично, но если преобразование не возможно подставляем 0, а не 127
+
+
+
+if Pos('.',sinp)=0 then
+ sinp:=sinp+'.';
+s:=Copy(sinp,1,Pos('.',sinp)-1);
+Delete(sinp,1,Pos('.',sinp));
+
+Result.IP:=Result.IP+s+'.';
+
+Delete(sinp,Pos(' ',sinp),length(sinp));
+s:=Copy(sinp,1,Pos('.',sinp)-1);
+
+s:=sinp;
+
+//Преобразовывать будем все, что осталось
+s:=IntToStr(Min(255,Max(0,StrToIntDef(s,1))));
+//Если преобразование не возможно подставляем 1
+Result.IP:=Result.IP+s;
+
+//Результирующая строка будет гарантировано содержать правильный IP
+end;
+
+
+procedure TPinguinServerForm.N13Click(Sender: TObject);
+var
+  tcpClient: TClientSocket;
+  i: Integer;
+  Client: TClient;
+  json_object: TJSONObject;
+  command: String;
+
+  k: TCustomerIP;
+
+  Event: TEvents;
+
+   parseIP : TparseIP;
+
+begin
+  try
+
+           SendAllTelegram(ObjectBot,'test','','');
+  //bot.SendMessageTelegram(user_id, send_mess);
+  //  LogFile('<166> Oct 26 00:00:41      :LinkStatus-6:Port 6 link up, 100Mbps FULL duplex',1);
+
+{  GLOBAL_SUCCESS_IP:= TList.Create;
+    GLOBAL_SUCCESS_IP.Clear;
+
+    // for i := 0 to Client_List.Count - 1 do
+    begin
+    for i := 0 to 20 do
+   begin
+   k:= TCustomerIP.Create((i+107812),'test','test','192.168.4.8',20,'','test service');
+   GLOBAL_SUCCESS_IP.Add(k);
+   end;
+
+    SaveBaseSUCCESS_IP;   }
+
+      // tcpClient:= TClientSocket.Create(nil);
+      // send_json := '';
+      { json_object := TJSONObject.Create;
+        command := 'disable_ip';
+        json_object.AddPair('request', command);
+        json_object.AddPair('ip', '192.168.11.127');
+        json_object.AddPair('port', '80');
+        json_object.AddPair('ping', '192');
+        send_json := json_object.ToJSON;
+
+        Client := TClient(Client_List[i]);
+        SendClientCommand(send_json, Client); }
+
+
+      // SendAllClient('не пингуетсЯ','мкр гарышккер дом 15 кв 34','192.168.8.10');
+
+
+      // ShowMessage(client.client_name);
+      { tcpClient.Host := client.client_ip;
+        tcpClient.Address := client.client_ip;
+        tcpClient.Port := client.client_port;
+        tcpClient.OnConnect:=SConnect;
+        tcpClient.Open; }
+      { if (tcpClient.Socket.Connected) then
+        begin
+        //tcpClient.Socket.SendText(json);
+        json_object.Free;
+        Log('connected',false);
+        // tcpClient.Socket.Close;
+        // tcpClient.Free;
+        end; }
+
+  //  end;
+
+  //SetHuawei_ON_OFF('10.77.0.85','interface GigabitEthernet 0/0/17','Huawei@123',true);
+
+ //   Event := TEvents.Create('','','Huawei@123','interface GigabitEthernet 0/0/17','10.77.0.85',0,'',false,false,false);
+  //  StartEvents(Event,'','10.77.0.85',23);
+
+      //  StartONOFF_GPON(false,GetGPON_Client);
+
+         // tv               f8f082172226
+    //    SetGPON_ON_OFF('10.77.0.88',LowerCase('F8F0.8216.0B0A'),'netadmin','netadmin',true,true);
+         // inet
+       // SetGPON_ON_OFF('10.77.0.88',LowerCase('F8F0.8216.0B0A'),'netadmin','netadmin',false,true);
+               // SendAllTelegram(ObjectBot,'dfgdgfg' , '' , '');
+
+        // IdHTTP1.Get('http://localhost:1818/API/615251642/%D0%9F%D1%80%D0%BE%D0%B2%D0%B5%D1%80%D0%BA%D0%B0');
+
+     //   ParseIPFromSyslogString('192.168.1.52 INFO: Port 21 LBD port recovered. Loop detection restarted' ,ip ,port);
+      // ShowMessage(ip+' '+port);
+
+  except
+    on E: EXCEPTION do
+    begin
+      Log(E.Message + ' line 902', false);
+    end;
+
+  end;
+
+end;
+
+procedure TPinguinServerForm.N15Click(Sender: TObject);
+var
+  List_IP: TLIST;
+  S: TCustomerIP;
+begin
+
+  SELECTParamsForm := TSelectParamsForm.Create(nil);
+  SELECTParamsForm.show;
+  { s:= TCustomerIP.Create(1,'fio','adress','10.77.0.42',13,'fgh','servicename');
+    List_IP:= TList.Create;
+    List_IP.Add(s);
+    List_IP.Add(s);
+    List_IP.Add(s);
+    List_IP.Add(s);
+    List_IP.Add(s);
+    List_IP.Add(s);
+    List_IP.Add(s);
+    List_IP.Add(s);
+    List_IP.Add(s);
+    List_IP.Add(s); }
+  // List_IP := GetCustomerIP(0);
+  // ShowMessage(TCustomerIP(List_IP[0]).CUSTOMER_FIO);
+  // StartONOFF(false,List_IP);
+end;
+
+procedure TPinguinServerForm.N16Click(Sender: TObject);
+var
+  S: TCustomerIP;
+  List_IP: TLIST;
+  IP: TCustomerIP;
+  i: Integer;
+begin
+  { List_IP:= TLIST.Create;
+    IP:= TCustomerIP.Create(1, 'test', 'test', '10.77.0.42', 13, '', 'test');
+
+    for  i := 1 to 55 do
+    begin
+    List_IP.Add(IP);
+    end; }
+   try
+   MonTaskPos := -1;
+  List_IP := GetCustomerIP(1, '',0);
+  RESTARTED_TASK_ON := true;
+ MonTaskPos := addTaskGrid('Мониторинг Вкл.Портов','','Выполняется');
+
+  if (List_IP.Count > 0) then
+  begin
+    TimerWaitStart.Enabled := false;
+    StartONOFF(1, List_IP);
+  end
+  else
+    TimerWaitStart.Enabled := true;
+    except on E:EXCEPTION do begin TimerWaitStart.Enabled := true; end; end;
+end;
+
+procedure TPinguinServerForm.N17Click(Sender: TObject);
+var
+  S: TCustomerIP;
+  List_IP: TLIST;
+  IP: TCustomerIP;
+  i: Integer;
+begin
+  List_IP := GetCustomerIP(5, '', 0);
+  RESTARTED_TASK_ON := false;
+  if (List_IP.Count > 0) then
+  begin
+    TimerWaitStart.Enabled := false;
+    StartONOFF(1, List_IP);
+  end
+
+end;
+
+procedure TPinguinServerForm.SConnect(Sender: TObject;
+  Socket: TCustomWinSocket);
+begin
+  Socket.SendText(send_json);
+end;
+
+procedure TPinguinServerForm.N1Click(Sender: TObject);
+begin
+  Close;
+end;
+
+procedure TPinguinServerForm.N2Click(Sender: TObject);
+begin
+  ConfForm := TConfForm.Create(nil);
+  ConfForm.show;
+end;
+
+procedure TPinguinServerForm.N4Click(Sender: TObject);
+var
+  a: Strings;
+begin
+
+  if (OpenDialog1.Execute) then
+  begin
+    IP_LIST := getIPListFromFile(OpenDialog1.FileName);
+    StartPing;
+  end;
+end;
+
+procedure TPinguinServerForm.N5Click(Sender: TObject);
+begin
+close;
+end;
+
+procedure TPinguinServerForm.N7Click(Sender: TObject);
+begin
+  ConfForm := TConfForm.Create(nil);
+  ConfForm.show;
+end;
+
+function TPinguinServerForm.GetEventType(event_type:Integer):String;
+var str : String;
+begin
+  case event_type of
+ 0 : str:= 'Выключить Порт на Huawei';
+ 1 : str:= 'Включить Порт на Huawei';
+ 2 : str:= 'Выключить Порт на Dlink';
+ 3 : str:= 'Включить Порт на Dlink';
+ else str:='не указан';
+  end;
+  Result := str;
+end;
+
+procedure TPinguinServerForm.IdIcmpClient1Reply(ASender: TComponent;
+  const AReplyStatus: TReplyStatus);
+begin
+
+  Log('packednum ' + IntToStr(AReplyStatus.PacketNumber), false);
+  Log('msroundtriptime - ' + FloatToStr(AReplyStatus.MsRoundTripTime), false);
+  Log('msgmessage - ' + AReplyStatus.Msg, false);
+
+  Log('msgcode - ' + IntToStr(AReplyStatus.MsgCode), false);
+  if (AReplyStatus.ReplyStatusType = rsEcho) then
+    Log('online', false)
+  else
+    Log('replystatustype - not', false);
+  case (AReplyStatus.BytesReceived) of
+    3:
+      LogsMemo.Lines.Add('100% ping');
+    0:
+      LogsMemo.Lines.Add('Нет связи ' + AReplyStatus.FromIpAddress);
+  else
+    LogsMemo.Lines.Add('с потерями');
+  end;
+  {
+    LogsMemo.Lines.Add ('Reply:'+IntToStr (AReplyStatus.MsRoundTripTime));
+    LogsMemo.Lines.Add(IdIcmpClient1.ReplyData);
+    LogsMemo.Lines.Add(IdIcmpClient1.ReplyStatus.Msg);
+    LogsMemo.Lines.Add(IntToStr }
+end;
+
+procedure TPinguinServerForm.IdIcmpClient1Status(ASender: TObject;
+  const AStatus: TIdStatus; const AStatusText: string);
+begin
+  Log(AStatusText, false);
+end;
+
+procedure TPinguinServerForm.IdSMTP1Connected(Sender: TObject);
+begin
+  Log('Подключение к ' + Conf.email_username, false);
+end;
+
+procedure TPinguinServerForm.IdSMTP1Disconnected(Sender: TObject);
+begin
+  Log('Отключение от ' + Conf.email_username, false);
+end;
+
+procedure TONOFF_GPON.TelnetDataAvalable(Sender: TIdTelnet;
+  const Buffer: TIdBytes);
+begin
+  // ***
+  response_result := BytesToString(Buffer);
+end;
+
+
+
+procedure TEVENTSONOFF.TelnetDataAvalable(Sender: TIdTelnet;
+  const Buffer: TIdBytes);
+begin
+  // ***
+  response_result := BytesToString(Buffer);
+end;
+
+procedure TSwithONOFF.TelnetDataAvalable(Sender: TIdTelnet;
+  const Buffer: TIdBytes);
+begin
+  // ***
+  response_result := BytesToString(Buffer);
+end;
+
+procedure TPinguinServerForm.IdTelnet1DataAvailable(Sender: TIdTelnet;
+  const Buffer: TIdBytes);
+begin
+
+  response_result := BytesToString(Buffer);
+  Log(BytesToString(Buffer), false);
+end;
+
+procedure TPinguinServerForm.IdTelnetServer1Connect(AContext: TIdContext);
+begin
+  Log('connected ' + AContext.Connection.Socket.Binding.PeerIP, false);
+end;
+
+procedure TPinguinServerForm.IdTelnetServer1Disconnect(AContext: TIdContext);
+begin
+  Log('disconnect ' + AContext.Connection.Socket.Binding.PeerIP, false);
+end;
+
+procedure TPinguinServerForm.IdTelnetServer1Execute(AContext: TIdContext);
+var
+  lCmd: string;
+  i: Integer;
+  switch: TSwitch;
+  message_body: String;
+begin
+  lCmd := Trim(AContext.Connection.IOHandler.ReadLn);
+  AContext.Connection.IOHandler.DefStringEncoding := enUTF8;
+
+  if (AnsiSameText(lCmd, 'HELP')) or (AnsiSameText(lCmd, '?')) then
+  begin
+    AContext.Connection.IOHandler.WriteLn(('Доступные команды'),
+      IndyTextEncoding_UTF8);
+    AContext.Connection.IOHandler.WriteLn('HELP');
+    AContext.Connection.IOHandler.WriteLn('QUIT');
+    AContext.Connection.IOHandler.WriteLn('EXIT');
+    AContext.Connection.IOHandler.WriteLn('NOTPING');
+    AContext.Connection.IOHandler.WriteLn('GETALL');
+    AContext.Connection.IOHandler.WriteLn('startOn1  - '+TranslitRus2Lat('{Динамический список оплативших на включение}'));
+    AContext.Connection.IOHandler.WriteLn('startOf1  - '+TranslitRus2Lat('{Динамический список оплативших на отключение}'));
+
+    AContext.Connection.IOHandler.WriteLn('startOn3  - '+TranslitRus2Lat('{Список Должников с Долгом 500тг включ}'));
+    AContext.Connection.IOHandler.WriteLn('startOf3  - '+TranslitRus2Lat('{Список Должников с Долгом 500тг откл}'));
+    AContext.Connection.IOHandler.WriteLn('');
+  end
+
+  else if (AnsiSameText(lCmd, 'QUIT')) or (AnsiSameText(lCmd, 'EXIT')) then
+  begin
+    AContext.Connection.IOHandler.WriteLn('Goodbye...');
+    AContext.Connection.IOHandler.WriteLn('');
+    AContext.Connection.Disconnect;
+  end
+
+  else if AnsiSameText(lCmd, 'NOTPING') then
+  begin
+
+    for i := 0 to IP_LIST.Count - 1 do
+    begin
+      switch := TSwitch(IP_LIST[i]);
+
+      if (not switch.enable) then
+      begin
+        message_body := '';
+
+        message_body := '#IP:~' + switch.IP + '~ ' + switch.status + '~ ' +
+          switch.adress + '~ ' + switch.last_avb + '~#';
+        AContext.Connection.IOHandler.WriteLn((message_body),
+          IndyTextEncoding_UTF8);
+        // AContext.Connection.IOHandler.WriteLn('');
+      end;
+
+    end;
+  end
+
+  else if AnsiSameText(lCmd, 'GETALL') then
+  begin
+
+    for i := 0 to IP_LIST.Count - 1 do
+    begin
+      switch := TSwitch(IP_LIST[i]);
+      message_body := '';
+
+      message_body := '#IP:~' + switch.IP + '~ ' + switch.status + '~ ' +
+        switch.adress + '~ ' + switch.last_avb + '~#';
+      AContext.Connection.IOHandler.WriteLn((message_body),
+        IndyTextEncoding_UTF8);
+    end;
+  end
+
+  else if AnsiSameText(lCmd, 'startOnBase') then // запуск на вкл из списка базы
+    StartONOFF(1, GetCustomerIP(3, '', 0))
+
+  else if AnsiSameText(lCmd, 'startOfBase') then // запуск на отк из списка базы
+    StartONOFF(0, GetCustomerIP(3, '', 0))
+
+  else if AnsiSameText(lCmd, 'startOn1') then  {Динамический список оплативших на включение}
+    StartONOFF(1, GetCustomerIP(0, '', 0))
+
+  else if AnsiSameText(lCmd, 'startOf1') then   {Динамический список оплативших на отключение}
+    StartONOFF(0, GetCustomerIP(0, '', 0))
+
+  else if AnsiSameText(lCmd, 'startOn2') then  {Динамический список должников на включ}
+    StartONOFF(1, GetCustomerIP(1, '', 0))
+
+  else if AnsiSameText(lCmd, 'startOf2') then    {Динамический список должников на отключение}
+    StartONOFF(0, GetCustomerIP(1, '', 0))
+
+  else if AnsiSameText(lCmd, 'startOn3') then   {Список Должников с Долгом 500тг включ}
+    StartONOFF(1, GetCustomerIP(4, '', 0))
+
+  else if AnsiSameText(lCmd, 'startOf3') then    {Список Должников с Долгом 500тг откл}
+    StartONOFF(0, GetCustomerIP(4, '', 0));
+
+
+
+end;
+
+procedure TPinguinServerForm.ThreadEventsException(Sender: TIdThreadComponent;
+  AException: Exception);
+begin
+LogFile('Поток Events '+SELECT_EVENT.mess+'- '+AException.Message,1);
+end;
+
+procedure TPinguinServerForm.ThreadEventsRun(Sender: TIdThreadComponent);
+var send_message : String;
+bodyemail : TStringList;
+begin
+
+
+
+
+case SELECT_EVENT.event_type of
+0 : begin
+     SetHuawei_ON_OFF(SELECT_EVENT.ip,SELECT_EVENT.port,SELECT_EVENT.password,false);
+     send_message:= 'Выключил порт на Huawei '+SELECT_EVENT.ip+' порт '+SELECT_EVENT.port;
+
+    end;
+
+1 : begin
+     SetHuawei_ON_OFF(SELECT_EVENT.ip,SELECT_EVENT.port,SELECT_EVENT.password,true);
+     send_message:= 'включил порт на Huawei '+SELECT_EVENT.ip+' порт '+SELECT_EVENT.port;
+    end;
+
+2 : begin
+     SetDLink_ON_OFF(SELECT_EVENT.ip,SELECT_EVENT.port,SELECT_EVENT.login,SELECT_EVENT.password,false);
+     send_message:= 'выключил порт на Dlink '+SELECT_EVENT.ip+':'+SELECT_EVENT.port;
+    end;
+
+3 : begin
+     SetDLink_ON_OFF(SELECT_EVENT.ip,SELECT_EVENT.port,SELECT_EVENT.login,SELECT_EVENT.password,true);
+     send_message:= 'включил порт на Dlink '+SELECT_EVENT.ip+':'+SELECT_EVENT.port;
+    end;
+
+
+end;
+
+     Log(send_message,false);
+     LogFile(send_message,2);
+
+{if(SELECT_EVENT.send_sms) then begin sms.send_sms(Conf.smsc_phone, TranslitRus2Lat(send_message));  end;
+
+if(SELECT_EVENT.send_telegram) then begin SendAllTelegram(ObjectBot, TranslitRus2Lat(send_message), '', SELECT_EVENT.ip);  end;
+
+if(SELECT_EVENT.send_email) then
+                      begin
+                         bodyemail := TStringList.Create;
+                         bodyemail.clear;
+                         bodyemail.Add('IP : ' + SELECT_EVENT.ip);
+                         bodyemail.Add('Адресс : ' + '');
+                         bodyemail.Add('Сообщение : ' + send_message);
+                         SendMail(bodyemail);
+                      end; }
+
+    ThreadEvents.Stop;
+ end;
+
+
+procedure TPinguinServerForm.ThreadEventsStopped(
+  Sender: TIdThreadComponent);
+begin
+Log('Поток Events Завершен....',false);
+end;
+
+procedure TPinguinServerForm.IdUDPServer1AfterBind(Sender: TObject);
+begin
+  Log('Сервер SYSLOG запущен  ' + Conf.syslog_server + ':' +
+    IntToStr(Conf.syslog_port), false);
+  if (Conf.write_log) then
+    LogFile('Сервер SYSLOG запущен ' + Conf.syslog_server + ':' +
+      IntToStr(Conf.syslog_port), 2);
+end;
+
+procedure TPinguinServerForm.IdUDPServer1UDPException
+  (AThread: TIdUDPListenerThread; ABinding: TIdSocketHandle;
+  const AMessage: string; const AExceptionClass: TClass);
+begin
+  Log('Ошибка :' + AMessage, false);
+  if (Conf.write_log) then
+    LogFile('Ошибка :' + AMessage, 2);
+end;
+
+procedure TPinguinServerForm.IdUDPServer1UDPRead(AThread: TIdUDPListenerThread;
+  const AData: TIdBytes; ABinding: TIdSocketHandle);
+var
+  MESS: String;
+begin
+  MESS := '';
+
+  MESS := BytesToString(AData);
+  ProcessCommand(MESS, ABinding.PeerIP, ABinding);
+
+end;
+
+procedure TPinguinServerForm.IdUDPServerSNMPTRAPAfterBind(Sender: TObject);
+begin
+ Log('Сервер SNMP TRAP SERVER запущен  ' + Conf.syslog_server + ':' +
+    IntToStr(Conf.syslog_port), false);
+  if (Conf.write_log) then
+    LogFile('Сервер SNMP TRAP SERVER запущен ' + Conf.syslog_server + ':' +
+      IntToStr(Conf.syslog_port), 2);
+end;
+
+procedure TPinguinServerForm.IdUDPServerSNMPTRAPUDPException(
+  AThread: TIdUDPListenerThread; ABinding: TIdSocketHandle;
+  const AMessage: string; const AExceptionClass: TClass);
+begin
+  Log('Ошибка SNMP SERVER:' + AMessage, false);
+  if (Conf.write_log) then
+    LogFile('Ошибка SNMP SERVER:' + AMessage, 2);
+end;
+
+procedure TPinguinServerForm.IdUDPServerSNMPTRAPUDPRead(
+  AThread: TIdUDPListenerThread; const AData: TIdBytes;
+  ABinding: TIdSocketHandle);
+var
+  MESS: String;
+begin
+  MESS := '';
+
+  MESS := BytesToString(AData);
+  ProcessCommand(MESS, ABinding.PeerIP, ABinding);
+
+
+end;
+
+end.
