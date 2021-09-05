@@ -1,4 +1,53 @@
- type
+{
+Теперь для начала нам нужно создать бота в чате с @BotFather и получить уникальный Token, выглядит он примерно так: 123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11
+
+Через любое доступное приложение Telegram, пишет в личку @BotFather следующие команды:
+
+/newbot
+
+Вводим название бота
+
+Если получаем в ответ «Good. Now let’s choose a username for your bot. It must end in bot. Like this, for example: TetrisBot or tetris_bot.» значит имя свободно, теперь требуется создать имя бота по которому мы сможем к нему обращаться @имябота. Обязательно нужно чтобы имя вашего бота заканчивалось на bot или _bot
+
+Подобрав имя вы должны получить следующий ответ:
+
+«Done! Congratulations on your new bot. You will find it at telegram.me/имябота. You can now add a description, about section and profile picture for your bot, see /help for a list of commands.
+
+Use this token to access the HTTP API:
+123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11
+
+For a description of the Bot API, see this page: https://core.telegram.org/bots/api«
+
+Поздравляю! Пол дела сделано. И последние что мы сделаем в первой статье, это проверим работу нашего токена. Для начала просто в браузере введите: https://api.telegram.org/botВашТокен/GetMe (Например: https://api.telegram.org/bot123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11/GetMe)
+
+В ответ мы должны получить:
+
+{«ok»:true,»result»:{«id»:…..,»first_name»:»Имя»,»username»:»Имя пользователя»}
+
+
+unit telegrambot_unit;
+
+interface
+
+  uses
+    System.Classes,System.SysUtils,IdHTTP,SuperObject,
+    IdIOHandler, IdIOHandlerSocket, IdIOHandlerStack, IdSSL, IdSSLOpenSSL;
+
+
+  const
+    BaseUrl ='https://api.telegram.org/bot';
+    API='xxxxxx';
+
+   var
+   JsObject: ISuperObject;
+   THttp : TIdHTTP;
+   SSL : TIdSSLIOHandlerSocketOpenSSL;
+
+type
+ TCallbackProc = procedure(user_id,user_name,user_message:String);
+
+
+  type
  TTelegramBot = class(TThread)
    public
     task_pos: Integer; // Позиция в гриде
@@ -16,7 +65,8 @@
      protected
     procedure Execute; override;
  end;
- 
+
+
  type
  TTelegramObject = class(TObject)
    public
@@ -26,8 +76,12 @@
    Function ConnectTelegramBot():Boolean;
 
  end;
- 
- // запуск Потоков для пинга аипи адресов
+
+ implementation
+
+ uses pinguin_unit;
+
+// запуск Потоков для пинга аипи адресов
 Function TTelegramObject.StartListen(CallProc:TCallbackProc):TTelegramBot;
 var
   TBot:  TTelegramBot;
@@ -42,11 +96,59 @@ begin
 
     Result := TBot;
 end;
-.........................
+
+
+// Подключимся к боту через токен
+Function TTelegramObject.ConnectTelegramBot():Boolean;
+var res : Boolean;
+    conf: TConf;
+begin
+   try
+     res := true;
+     THttp:=TIdHTTP.Create;
+     THttp.ProtocolVersion := pv1_1;
+     THttp.Request.BasicAuthentication := false;
+     THttp.Request.UserAgent := 'Mozilla/5.0 (Windows NT 6.1; WOW64; rv:12.0) Gecko/20100101 Firefox/12.0';
+
+
+   conf := PinguinServerForm.Conf;
+
+    if(conf.proxy_enable)then
+    begin
+     THttp.ProxyParams.ProxyServer := conf.proxy_server;
+     THttp.ProxyParams.ProxyPort := conf.proxy_port;
+     THttp.ProxyParams.ProxyUsername := conf.proxy_username;
+     THttp.ProxyParams.ProxyPassword := conf.proxy_password;
+    end;
+
+    SSL:=TIdSSLIOHandlerSocketOpenSSL.Create(nil);
+     SSL.SSLOptions.Method := sslvSSLv3;
+     SSL.SSLOptions.SSLVersions := [sslvSSLv3];
+     SSL.SSLOptions.Mode := sslmUnassigned;
+
+     SSL.SSLOptions.VerifyMode := [];
+     SSL.SSLOptions.VerifyDepth := 0;
+
+   //  SSL.SSLOptions.RootCertFile := 'D:/YOURPUBLIC.pem';
+    // SSL.SSLOptions.CertFile := 'D:/YOURPUBLIC.pem';
+
+
+     THttp.IOHandler:=SSL;
+     JsObject:=SO(THTTP.Get(BaseUrl+API+'/GetMe'));
+  if JsObject.B['ok']=True then //Ауторизация успешна
+  begin   res:= true;    end;
 
 
 
-// Отправим Сообщение Пользователю зная его ID
+  finally
+     Connected := res;
+     Result := res;
+    THttp.Free;
+     SSL.Free;
+  end;
+end;
+
+ // Отправим Сообщение Пользователю зная его ID
  Function TTelegramObject.SendMessageTelegram(IDUser,Text: String):String;
 var
   JsObject: ISuperObject;
@@ -57,6 +159,50 @@ begin
    try
 
      THttp:=TIdHTTP.Create;
+     THttp.ProtocolVersion := pv1_0;
+   //  conf := PinguinServerForm.Conf;
+
+  {  if(conf.proxy_enable)then
+    begin
+     THttp.ProxyParams.ProxyServer := conf.proxy_server;
+     THttp.ProxyParams.ProxyPort := conf.proxy_port;
+     THttp.ProxyParams.ProxyUsername := conf.proxy_username;
+     THttp.ProxyParams.ProxyPassword := conf.proxy_password;
+    end;  }
+
+       THTTP.Get('http://192.168.1.15:1818/API/'+IDUser+'/'+Text);
+        Result := 'Отправил сообщение через NODE TELEGRAM SERVER '+IDUser;
+
+      {
+     SSL:=TIdSSLIOHandlerSocketOpenSSL.Create;
+     THttp.IOHandler:=SSL;
+
+     JsObject:=SO(THTTP.Get(BaseUrl+API+Zapros));
+     if JsObject.B['ok']=True then
+     begin
+     Result := ' Бот написал '+JsObject.s['result.chat.username']+' : '+JsObject.s['result.text'];
+     end;   }
+   except on E:EXCEPTION do begin
+       Result := e.Message+' Ошибка отправки сообщения!';
+                            end;
+   end;
+
+    THttp.Free;
+     SSL.Free;
+
+
+end;
+
+ procedure TTelegramBot.Execute;
+var
+  RHttp:TIdHTTP;
+  RSSL:TIdSSLIOHandlerSocketOpenSSL;
+  Offset:integer;
+  JsObject1, JsObject2: ISuperObject;
+  conf : Tconf;
+begin
+  Offset := 0;
+  RHttp:=TIdHTTP.Create;
 
      conf := PinguinServerForm.Conf;
 
@@ -69,25 +215,39 @@ begin
     end;
 
 
-     SSL:=TIdSSLIOHandlerSocketOpenSSL.Create;
-     THttp.IOHandler:=SSL;
+  RSSL:=TIdSSLIOHandlerSocketOpenSSL.Create;
+  RHttp.IOHandler:=RSSL;
+  while True do
+  begin
+    JsObject1:=SO(RHTTP.Get(BaseUrl+API+'/getUpdates?offset='+IntToStr(Offset)+'&timeout=30'));
+    JsObject2:= JsObject1.A['result'].N[0];
+    Offset:=JsObject2.i['update_id'] + 1; //В случае если сообщений не было, Offset станет равным 1.
 
-     JsObject:=SO(THTTP.Get(BaseUrl+API+Zapros));
-     if JsObject.B['ok']=True then
+   if Offset<>1 then
      begin
-     Result := ' Бот написал '+JsObject.s['result.chat.username']+' : '+JsObject.s['result.text'];
+      if JsObject2.s['message.text']<>'' then
+      begin
+      cur_status := '';
+      user_id := JsObject2.s['message.from.id']; //Его ИД по которому можем ему написать
+      user_name := JsObject2.s['message.from.first_name']+' '+JsObject2.s['message.from.last_name']; //Это имя написавшего боту
+      user_message :=  JsObject2.s['message.text'];  //Текст сообщения
+      Synchronize(Status); // Сообщим что есть ответ
+      end;
      end;
-   except on E:EXCEPTION do begin
-       Result := e.Message+' Ошибка отправки сообщения!';
-                            end;
-   end;
-
-    THttp.Free;
-     SSL.Free;
-
+   if Terminated then break;
+  end;
+ RHttp.Free;
+ RSSL.Free;
 end;
 
-constructor TTelegramBot.Create(Asyspended: Boolean);
+Procedure TTelegramBot.Status;
+begin
+   cur_status := '';
+   PinguinServerForm.Log(user_name+' '+user_message,false);
+   CallProcedure(user_id,user_name,user_message);
+end;
+
+ constructor TTelegramBot.Create(Asyspended: Boolean);
 begin
   FreeOnTerminate := True;
   inherited Create(Asyspended);
@@ -99,3 +259,5 @@ PinguinServerForm.Log('destroy thread telegram',false);
  // PinguinServerForm.DeleteARow(PinguinServerForm.GridTaskList, (task_pos - 1));
   inherited;
 end;
+
+end.
