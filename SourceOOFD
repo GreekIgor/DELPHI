@@ -1,3 +1,130 @@
+unit OOFD;
+
+interface
+
+uses IdIOHandler,
+  IdIOHandlerSocket, IdIOHandlerStack, IdSSL, IdSSLOpenSSL, IdHTTP,
+  IdMultipartFormData, System.Classes, Json, Dialogs, SysUtils,Windows,Forms,STDCTRLS;
+
+type
+TSellBuy = class(TObject)
+  Sum : Double;
+  PaymentType : Integer;
+  PaymentTypeName : String;
+end;
+
+type
+TNonNullableType = record
+  Sell : Double;
+  Buy : Double;
+  ReturnSell : Double;
+  ReturnBuy : Double;
+
+end;
+
+type
+TZXReport = class(TObject)
+  ReportNumber : Integer;
+  TaxPayerName :  String;
+  TaxPayerIN : String;
+  TaxPayerVAT : Boolean;
+  TaxPayerVATSeria : String;
+  TaxPayerVATNumber : String;
+  CashBoxSN : String;
+  CashBoxIN : String;
+  CashBoxRN : String;
+  StartOn : String;
+  ReportOn : String;
+  CloseOn : String;
+  CashierCode : Integer;
+  ShiftNumber : Integer;
+  DocumentCount : Integer;
+  PutMoneySum : Double;
+  TakeMoneySum : Double;
+  ControlSum : String;
+  OfflineMode : Boolean;
+  CashBoxOfflineMode : Boolean;
+  SumInCashbox  : Double;
+  Sell : TList;{ of TSellBuy;}
+  Buy : TList {of TSellBuy;};
+  ReturnSell : TList {of TSellBuy;};
+  ReturnBuy : TList {of TSellBuy;};
+   StartNonNullable : TNonNullableType;
+   EndNonNullable : TNonNullableType;
+
+end;
+
+
+type
+TControlTape = class(TObject)
+  OperationTypeText : String;
+  Sum : Double;
+  Date : String;
+  EmployeeCode : Integer;
+  Number : String;
+  isOffline : Boolean;
+  ExternalOperationId : String;
+end;
+
+
+type
+  TCassa = class(Tobject)
+    UniqueNumber: String;
+    RegistrationNumber: String;
+    IdentificationNumber: String;
+    Name: String;
+    Description: String;
+    IsOffline: Boolean;
+    CurrentStatus: Integer;
+    Shift: Integer;
+  end;
+
+type
+  Tpayment = class(Tobject)
+    Sum: double;
+    PaymentType: LongInt;
+
+  end;
+
+type
+  Tposition = class(Tobject)
+    Count: double;
+    Price: double;
+    Tax: double;
+    TaxType: LongInt;
+    PositionName: String;
+    PositionCode: double;
+    Discount: double;
+    Markup: double;
+    SectionCode: String;
+    IsStorno: Boolean;
+
+    UnitCode: Integer;
+  end;
+
+type
+  TSendCheck = class(Tobject)
+  public
+    Token: String;
+    CashboxUniqueNumber: String;
+    OperationType: LongInt;
+    Position: TJSONArray;
+    Payment: TJSONArray;
+    Change: double;
+    RoundType: Integer;
+    ExternalCheckNumber: String;
+    CustomerEmail: String;
+
+  end;
+
+type
+  Tcashbox = class(Tobject)
+    Unique_Number: String;
+    Registration_Number: String;
+    Identity_Number: String;
+    Address: String;
+  end;
+
 
 type
 TMoneyOperation = class(TObject)
@@ -22,7 +149,6 @@ type
     TicketUrl: String;
   end;
 
-
 type
   TOOFD = class(Tobject)
 
@@ -45,12 +171,27 @@ type
       Operation_type: Integer; Sum: double; ExtNumb: String): TMoneyOperation;
     function ZReport(Token: String; CassaNumber: String): TZXReport;
     function XReport(Token: String; CassaNumber: String): TZXReport;
-    
-    
-    
-    ......................
-    
-    
+    // Получить отчет контрольная лента
+    function ControlTape(Token: String; CassaNumber: String;
+      ShiftNumber: Integer): TList;
+    // получить список касс
+    function GetCashBox(Token: String): TList;
+    // получить историю смен по кассе
+    function ShiftHistory(Token: String; CassaNumber: String;
+      ShiftNumber: String): TJSONObject;
+
+   private
+ var DForm : TForm;
+  procedure Log(Str:String);
+  Procedure DialogProgress();
+  Procedure CloseDialog();
+  end;
+
+
+
+
+implementation
+
 constructor TOOFD.Create();
 begin
   HTTP := TIdHTTP.Create(nil);
@@ -61,6 +202,82 @@ begin
 
 end;
 
+destructor TOOFD.Destroy();
+begin
+  if HTTP.Connected then
+    HTTP.Disconnect;
+  HTTP.FreeOnRelease;
+  CloseDialog;
+end;
+
+
+Procedure TOOFD.CloseDialog();
+begin
+ if((Assigned(DForm)))then
+ begin
+
+   DForm.Close;
+   DForm:= nil;
+ end;
+end;
+
+Procedure TOOFD.DialogProgress();
+var DForm : TForm;
+    LB : Tlabel;
+begin
+
+ if(not (Assigned(DForm)))then
+ begin
+
+   DForm := TForm.Create(Application);
+with Dform do
+begin
+
+  Width := 300;
+  Height := 100;
+  Position := poScreenCenter;
+
+  FormStyle := fsStayOnTop;
+  BorderStyle := bsNone;
+
+  LB:=TLabel.Create(DForm);
+  LB.Parent := DForm;
+  LB.Left:= DForm.Width div 2;
+  LB.Top:= DForm.Height div 2;
+
+  LB.Caption := 'Ожидаите, операции ООФД...'+#13#10+
+                'Идет Загрузка данных';
+
+end;
+
+  Dform.ShowModal;
+
+
+
+end;
+
+
+end;
+
+
+procedure TOOFD.Log(Str:String);
+  var
+ f:TextFile;
+ FileDir:String;
+begin
+Str := '['+DateTimeToStr(Now)+'] '+Str;
+ FileDir:=ExtractFilePath(ParamStr(0))+'log_OOFD.txt';
+AssignFile(f,FileDir);
+if not FileExists(FileDir) then
+ begin
+  Rewrite(f);
+  CloseFile(f);
+ end;
+Append(f);
+Writeln(f,str);
+Flush(f);
+CloseFile(f);
+end;
 
 function TOOFD.Autorize(login: String; passwd: String): String;
 var
@@ -109,6 +326,349 @@ begin
 
 end;
 
+// Получить список касс
+function TOOFD.GetCashBox(Token: String): TList;
+var
+  json_obj: TJSONObject;
+  json_stream: TStringStream;
+  response: String;
+  cassa: TCassa;
+  cassa_list: TList;
+  json_list: TJSONArray;
+  json_response, json_data: TJSONObject;
+  i: Integer;
+begin
+  try
+DialogProgress;
+
+  json_obj := TJSONObject.Create;
+
+  cassa_list := TList.Create;
+
+  json_obj.AddPair('Token', Token);
+  json_stream := TStringStream.Create(json_obj.ToJSON);
+
+  response := HTTP.Post(API_URL + 'CashBoxes', json_stream);
+
+  json_response := (TJSONObject.ParseJSONValue(response) as TJSONObject);
+  if (json_response.GetValue('Data') <> nil) then
+  begin
+    json_list := ((json_response.GetValue('Data') as TJSONObject)
+      .GetValue('List') as TJSONArray);
+
+    for i := 0 to json_list.Count - 1 do
+    begin
+
+      json_data := (json_list.Items[i] as TJSONObject);
+      cassa := TCassa.Create;
+      cassa.UniqueNumber := json_data.GetValue('UniqueNumber').Value;
+      cassa.RegistrationNumber := json_data.GetValue('RegistrationNumber').Value;
+      cassa.IdentificationNumber := json_data.GetValue('IdentificationNumber').Value;
+      cassa.Name := json_data.GetValue('Name').Value;
+//      cassa.Description := json_data.GetValue('Description').Value;
+      cassa.IsOffline := StrToBool(json_data.GetValue('IsOffline').Value);
+      cassa.CurrentStatus := StrToInt(json_data.GetValue('CurrentStatus').Value);
+      cassa.Shift := StrToInt(json_data.GetValue('Shift').Value);
+
+      cassa_list.Add(cassa);
+
+    end;
+
+  end
+  else begin ShowMessage(response);Log('IN - '+json_obj.ToJSON);  Log('out - '+response); end;
+
+
+  finally
+    Result := cassa_list;
+    json_obj.Free;
+    json_stream.Free;
+    CloseDialog;
+  end;
+
+end;
+
+// получение списка смен касс
+function TOOFD.ShiftHistory(Token: String; CassaNumber: String;
+  ShiftNumber: String): TJSONObject;
+var
+  json_obj: TJSONObject;
+  json_stream: TStringStream;
+  response: TJSONObject;
+begin
+  json_obj := TJSONObject.Create;
+
+  json_obj.AddPair('Token', Token);
+  json_obj.AddPair('CashBoxUniqueNumber', CassaNumber);
+  json_obj.AddPair('ShiftNumber', TJSONNumber.Create(ShiftNumber));
+
+  json_stream := TStringStream.Create(json_obj.ToJSON);
+  HTTP.Post(API_URL + 'Cashbox/ShiftHistory', json_stream);
+
+  Result := response;
+
+end;
+
+function TOOFD.ControlTape(Token: String; CassaNumber: String;
+  ShiftNumber: Integer): TList;
+var
+  json_obj,
+  json_response: TJSONObject;
+  json_stream: TStringStream;
+  response: String;
+  js_arr : TJSONArray;
+  i : Integer;
+  controlTape : TControlTape;
+  cTape_list : TList;
+  json_item : TJSONObject;
+begin
+  json_obj := TJSONObject.Create;
+  cTape_list := TList.Create;
+  json_obj.AddPair('Token', Token);
+  json_obj.AddPair('CashBoxUniqueNumber', CassaNumber);
+  json_obj.AddPair('ShiftNumber', TJSONNumber.Create(ShiftNumber));
+
+  json_stream := TStringStream.Create(json_obj.ToJSON);
+  response := HTTP.Post(API_URL + 'Reports/ControlTape', json_stream);
+
+   json_response := (TJSONObject.ParseJSONValue(response) as TJSONObject);
+   js_arr :=(json_response.GetValue('Data') as TJSONArray);
+
+   for i := 0 to js_arr.Count-1 do
+    begin
+
+
+    controlTape := TControlTape.Create;
+    controlTape.OperationTypeText := TJSONObject(js_arr.Items[i]).GetValue('OperationTypeText').Value;
+    controlTape.Sum := StrToFloat(TJSONObject(js_arr.Items[i]).GetValue('Sum').Value);
+    controlTape.Date := TJSONObject(js_arr.Items[i]).GetValue('Date').Value;
+    controlTape.EmployeeCode := StrToInt(TJSONObject(js_arr.Items[i]).GetValue('EmployeeCode').Value);
+    controlTape.Number := TJSONObject(js_arr.Items[i]).GetValue('Number').Value;
+//    controlTape.isOffline := StrToBool(TJSONObject(js_arr.Items[i]).GetValue('isOffline').Value);
+ //   controlTape.ExternalOperationId := TJSONObject(js_arr.Items[i]).GetValue('ExtrenalOperationId').Value;
+    cTape_list.Add(controlTape);
+
+    end;
+
+  Result := cTape_list;
+
+end;
+
+function TOOFD.XReport(Token: String; CassaNumber: String): TZXReport;
+var
+  json_obj,
+  json_data,
+  json_response,
+  json_ennon: TJSONObject;
+  json_stream: TStringStream;
+  response: String;
+  res : TZXReport;
+  sell,
+  buy :TSellBuy;
+  i : Integer;
+  sell_js_arr : TJSONArray;
+  type_pay : Integer;
+begin
+
+try
+  DialogProgress;
+  json_obj := TJSONObject.Create;
+
+   res := TZXReport.Create;
+
+  json_obj.AddPair('Token', Token);
+  json_obj.AddPair('CashBoxUniqueNumber', CassaNumber);
+
+  json_stream := TStringStream.Create(json_obj.ToJSON);
+  response := HTTP.Post(API_URL + 'XReport', json_stream);
+   Log(response);
+
+ json_response := (TJSONObject.ParseJSONValue(response) as TJSONObject);
+  if (json_response.GetValue('Data') <> nil) then
+    begin
+      json_data := (json_response.GetValue('Data') as TJSONObject);
+      res.ReportNumber := StrToInt(json_data.GetValue('ReportNumber').Value);
+      res.TaxPayerName := json_data.GetValue('TaxPayerName').Value;
+      res.TaxPayerIN := json_data.GetValue('TaxPayerIN').Value;
+      res.TaxPayerVAT := StrToBool(json_data.GetValue('TaxPayerVAT').Value);
+      res.TaxPayerVATSeria := json_data.GetValue('TaxPayerVATSeria').Value;
+      res.TaxPayerVATNumber := json_data.GetValue('TaxPayerVATNumber').Value;
+      res.CashBoxSN := json_data.GetValue('CashboxSN').Value;
+      res.CashBoxIN := json_data.GetValue('CashboxIN').Value;
+      res.CashBoxRN := json_data.GetValue('CashboxRN').Value;
+      res.StartOn := json_data.GetValue('StartOn').Value;
+      res.ReportOn := json_data.GetValue('ReportOn').Value;
+      res.CloseOn := json_data.GetValue('CloseOn').Value;
+      res.CashierCode := StrToInt(json_data.GetValue('CashierCode').Value);
+      res.ShiftNumber := StrToInt(json_data.GetValue('ShiftNumber').Value);
+      res.DocumentCount := StrToInt(json_data.GetValue('DocumentCount').Value);
+      res.PutMoneySum := StrToFloat(json_data.GetValue('PutMoneySum').Value);
+      res.TakeMoneySum := StrToFloat(json_data.GetValue('TakeMoneySum').Value);
+      res.ControlSum := (json_data.GetValue('ControlSum').Value);
+      res.OfflineMode := StrToBool(json_data.GetValue('OfflineMode').Value);
+      res.CashBoxOfflineMode := StrToBool(json_data.GetValue('CashboxOfflineMode').Value);
+      res.SumInCashbox := StrToFloat(json_data.GetValue('SumInCashbox').Value);
+
+     sell_js_arr :=(TJSONObject(json_data.GetValue('Sell')).GetValue('PaymentsByTypesApiModel') as TJSONArray);
+     res.Sell := TList.Create;
+     for i := 0 to sell_js_arr.Count-1 do
+        begin
+        sell := TSellBuy.Create;
+
+        sell.Sum := StrToFloat(TJSONObject(sell_js_arr.Items[i]).GetValue('Sum').Value);
+       type_pay := StrToInt(TJSONObject(sell_js_arr.Items[i]).GetValue('Type').Value);
+
+       case type_pay of
+       0 : sell.PaymentTypeName := 'Наличные';
+       1 : sell.PaymentTypeName := 'Банковская карта';
+       2 : sell.PaymentTypeName := 'Оплата в кредит';
+       3 : sell.PaymentTypeName := 'Оплата тарой';
+       end;
+
+          res.Sell.Add(sell);
+        end;
+
+
+
+
+     res.EndNonNullable.Sell := StrToFloat(TJSONObject(json_data.GetValue('EndNonNullable')).GetValue('Sell').Value);
+     res.EndNonNullable.Buy := StrToFloat(TJSONObject(json_data.GetValue('EndNonNullable')).GetValue('Buy').Value);
+     res.EndNonNullable.ReturnSell := StrToFloat(TJSONObject(json_data.GetValue('EndNonNullable')).GetValue('ReturnSell').Value);
+     res.EndNonNullable.ReturnBuy := StrToFloat(TJSONObject(json_data.GetValue('EndNonNullable')).GetValue('ReturnBuy').Value);
+
+
+
+     res.StartNonNullable.Sell := StrToFloat(TJSONObject(json_data.GetValue('StartNonNullable')).GetValue('Sell').Value);
+     res.StartNonNullable.Buy := StrToFloat(TJSONObject(json_data.GetValue('StartNonNullable')).GetValue('Buy').Value);
+     res.StartNonNullable.ReturnSell := StrToFloat(TJSONObject(json_data.GetValue('StartNonNullable')).GetValue('ReturnSell').Value);
+     res.StartNonNullable.ReturnBuy := StrToFloat(TJSONObject(json_data.GetValue('StartNonNullable')).GetValue('ReturnBuy').Value);
+
+
+
+
+
+  //  res.ReturnSell.Add();
+
+   end
+   else
+   begin
+     ShowMessage(response);
+   end;
+
+finally
+  Result := res;
+  CloseDialog;
+end;
+
+
+end;
+
+function TOOFD.ZReport(Token: String; CassaNumber: String): TZXReport;
+var
+  json_obj,
+  json_data,
+  json_response,
+  json_ennon: TJSONObject;
+  json_stream: TStringStream;
+  response: String;
+  res : TZXReport;
+  sell,
+  buy :TSellBuy;
+  i : Integer;
+  sell_js_arr : TJSONArray;
+  type_pay : Integer;
+begin
+
+try
+  DialogProgress;
+  json_obj := TJSONObject.Create;
+
+   res := TZXReport.Create;
+
+  json_obj.AddPair('Token', Token);
+  json_obj.AddPair('CashBoxUniqueNumber', CassaNumber);
+
+  json_stream := TStringStream.Create(json_obj.ToJSON);
+  response := HTTP.Post(API_URL + 'ZReport', json_stream);
+   Log(response);
+
+ json_response := (TJSONObject.ParseJSONValue(response) as TJSONObject);
+  if (json_response.GetValue('Data') <> nil) then
+    begin
+      json_data := (json_response.GetValue('Data') as TJSONObject);
+      res.ReportNumber := StrToInt(json_data.GetValue('ReportNumber').Value);
+      res.TaxPayerName := json_data.GetValue('TaxPayerName').Value;
+      res.TaxPayerIN := json_data.GetValue('TaxPayerIN').Value;
+      res.TaxPayerVAT := StrToBool(json_data.GetValue('TaxPayerVAT').Value);
+      res.TaxPayerVATSeria := json_data.GetValue('TaxPayerVATSeria').Value;
+      res.TaxPayerVATNumber := json_data.GetValue('TaxPayerVATNumber').Value;
+      res.CashBoxSN := json_data.GetValue('CashboxSN').Value;
+      res.CashBoxIN := json_data.GetValue('CashboxIN').Value;
+      res.CashBoxRN := json_data.GetValue('CashboxRN').Value;
+      res.StartOn := json_data.GetValue('StartOn').Value;
+      res.ReportOn := json_data.GetValue('ReportOn').Value;
+      res.CloseOn := json_data.GetValue('CloseOn').Value;
+      res.CashierCode := StrToInt(json_data.GetValue('CashierCode').Value);
+      res.ShiftNumber := StrToInt(json_data.GetValue('ShiftNumber').Value);
+      res.DocumentCount := StrToInt(json_data.GetValue('DocumentCount').Value);
+      res.PutMoneySum := StrToFloat(json_data.GetValue('PutMoneySum').Value);
+      res.TakeMoneySum := StrToFloat(json_data.GetValue('TakeMoneySum').Value);
+      res.ControlSum := (json_data.GetValue('ControlSum').Value);
+      res.OfflineMode := StrToBool(json_data.GetValue('OfflineMode').Value);
+      res.CashBoxOfflineMode := StrToBool(json_data.GetValue('CashboxOfflineMode').Value);
+      res.SumInCashbox := StrToFloat(json_data.GetValue('SumInCashbox').Value);
+
+     sell_js_arr :=(TJSONObject(json_data.GetValue('Sell')).GetValue('PaymentsByTypesApiModel') as TJSONArray);
+     res.Sell := TList.Create;
+     for i := 0 to sell_js_arr.Count-1 do
+        begin
+        sell := TSellBuy.Create;
+
+        sell.Sum := StrToFloat(TJSONObject(sell_js_arr.Items[i]).GetValue('Sum').Value);
+       type_pay := StrToInt(TJSONObject(sell_js_arr.Items[i]).GetValue('Type').Value);
+
+       case type_pay of
+       0 : sell.PaymentTypeName := 'Наличные';
+       1 : sell.PaymentTypeName := 'Банковская карта';
+       2 : sell.PaymentTypeName := 'Оплата в кредит';
+       3 : sell.PaymentTypeName := 'Оплата тарой';
+       end;
+
+          res.Sell.Add(sell);
+        end;
+
+
+
+
+     res.EndNonNullable.Sell := StrToFloat(TJSONObject(json_data.GetValue('EndNonNullable')).GetValue('Sell').Value);
+     res.EndNonNullable.Buy := StrToFloat(TJSONObject(json_data.GetValue('EndNonNullable')).GetValue('Buy').Value);
+     res.EndNonNullable.ReturnSell := StrToFloat(TJSONObject(json_data.GetValue('EndNonNullable')).GetValue('ReturnSell').Value);
+     res.EndNonNullable.ReturnBuy := StrToFloat(TJSONObject(json_data.GetValue('EndNonNullable')).GetValue('ReturnBuy').Value);
+
+
+
+     res.StartNonNullable.Sell := StrToFloat(TJSONObject(json_data.GetValue('StartNonNullable')).GetValue('Sell').Value);
+     res.StartNonNullable.Buy := StrToFloat(TJSONObject(json_data.GetValue('StartNonNullable')).GetValue('Buy').Value);
+     res.StartNonNullable.ReturnSell := StrToFloat(TJSONObject(json_data.GetValue('StartNonNullable')).GetValue('ReturnSell').Value);
+     res.StartNonNullable.ReturnBuy := StrToFloat(TJSONObject(json_data.GetValue('StartNonNullable')).GetValue('ReturnBuy').Value);
+
+
+
+
+
+  //  res.ReturnSell.Add();
+
+   end
+   else
+   begin
+     ShowMessage(response);
+   end;
+
+finally
+  Result := res;
+  CloseDialog;
+end;
+
+end;
 
 function TOOFD.MoneyOperation(Token: String; CassaNumber: String;
   Operation_type: Integer; Sum: double; ExtNumb: String): TMoneyOperation;
@@ -162,3 +722,76 @@ try
 end;
 
 end;
+
+function TOOFD.Check(SendCheck: TSendCheck): TAnswerCheck;
+var
+  json_stream, jsst: TStringStream;
+  json_obj: TJSONObject;
+  json_pair: TJSONPair;
+  response: String;
+  json_response: TJSONObject;
+  json_data: TJSONObject;
+  answer: TAnswerCheck;
+  cashbox: Tcashbox;
+  cashbox_json: TJSONObject;
+  js_str: String;
+begin
+  try
+
+    json_obj := TJSONObject.Create;
+
+    json_obj.AddPair('Token', SendCheck.Token);
+    json_obj.AddPair('CashBoxUniqueNumber', SendCheck.CashboxUniqueNumber);
+    json_obj.AddPair('OperationType',
+      TJSONNumber.Create(SendCheck.OperationType));
+    json_obj.AddPair('Positions', SendCheck.Position);
+    json_obj.AddPair('Payments', SendCheck.Payment);
+
+    json_stream := TStringStream.Create(json_obj.ToJSON);
+
+    answer := TAnswerCheck.Create;
+    response := HTTP.Post(API_URL + 'Check', json_stream);
+    Log(response);
+
+    json_response := (TJSONObject.ParseJSONValue(response) as TJSONObject);
+    if (json_response.GetValue('Data') <> nil) then
+    begin
+      json_data := (json_response.GetValue('Data') as TJSONObject);
+
+      answer.check_number := json_data.GetValue('CheckNumber').Value;
+      answer.date_time := json_data.GetValue('DateTime').Value;
+      answer.offline_mode := StrToBool(json_data.GetValue('OfflineMode').Value);
+
+      cashbox_json := (json_data.GetValue('Cashbox') as TJSONObject);
+
+      answer.cashbox := Tcashbox.Create;
+      answer.cashbox.Unique_Number :=
+        cashbox_json.GetValue('UniqueNumber').Value;
+      answer.cashbox.Registration_Number :=
+        cashbox_json.GetValue('RegistrationNumber').Value;
+      answer.cashbox.Identity_Number :=
+        cashbox_json.GetValue('IdentityNumber').Value;
+      answer.cashbox.Address := cashbox_json.GetValue('Address').Value;
+
+      answer.CheckOrderNumber :=
+        StrToInt(json_data.GetValue('CheckOrderNumber').Value);
+      answer.ShiftNumber := StrToInt(json_data.GetValue('ShiftNumber').Value);
+      answer.EmployeeName := json_data.GetValue('EmployeeName').Value;
+      answer.TicketUrl := json_data.GetValue('TicketUrl').Value;
+
+    end
+    else
+    begin
+      // error code
+    ShowMessage(response);
+    end;
+
+  finally
+    Result := answer;
+    json_stream.Free;
+    json_response.Free;
+  end;
+
+end;
+
+end.
